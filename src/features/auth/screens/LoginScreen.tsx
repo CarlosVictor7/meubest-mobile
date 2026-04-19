@@ -17,9 +17,9 @@ import { ChevronLeft, MessageCircle, Heart } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { makeRedirectUri } from 'expo-auth-session';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@shared/services/firebase';
 import { appConfig } from '@constants/appConfig';
 import type { AuthStackParamList } from '@navigation/types';
@@ -76,11 +76,14 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
 
-  // ── Google Auth Session (funciona no Expo Go sem GoogleService-Info.plist)
+  // ── Google Auth Session
+  // Em Expo Go: redirect é exp://... (requer URI registrada no Google Cloud)
+  // Em build nativo: usa meubest:// (scheme do app)
+  const redirectUri = makeRedirectUri({ native: 'meubest://auth' });
+
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: appConfig.googleWebClientId || undefined,
-    // Expo Go usa o scheme do Expo para redirect
-    redirectUri: makeRedirectUri({ scheme: 'meubest' }),
+    redirectUri,
   });
 
   // ── Processa resposta do Google após o browser fechar
