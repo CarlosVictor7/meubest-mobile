@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Alert,
   StatusBar,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,9 +15,20 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft, MessageCircle, Heart } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { makeRedirectUri } from 'expo-auth-session';
+import { auth, db } from '@shared/services/firebase';
+import { appConfig } from '@constants/appConfig';
 import type { AuthStackParamList } from '@navigation/types';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { Button } from '@shared/components';
+import type { UserProfile } from '@models/user';
+
+// Necessário para fechar o browser ao retornar ao app
+WebBrowser.maybeCompleteAuthSession();
 
 type RouteProps = RouteProp<AuthStackParamList, 'Login'>;
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
@@ -34,7 +46,6 @@ const ROLE_CONTENT = {
     headline: 'Você deu o\nprimeiro passo.',
     subheadline:
       'Conectamos você a alguém que já passou pelo que você está vivendo — presente, sem julgamento.',
-    googleBtnLabel: 'Entrar com o Google',
     switchLabel: 'Na verdade, quero apoiar alguém →',
     switchRole: 'listener' as const,
     motivational: '🤍  Você não está sozinho. Estamos aqui.',
@@ -50,7 +61,6 @@ const ROLE_CONTENT = {
     headline: 'A comunidade\nprecisa de você.',
     subheadline:
       'Sua experiência tem valor. Cada conversa que você oferece muda a trajetória de alguém.',
-    googleBtnLabel: 'Entrar com o Google',
     switchLabel: 'Na verdade, preciso ser ouvido →',
     switchRole: 'speaker' as const,
     motivational: '💚  Seu tempo e presença são um presente.',
@@ -61,9 +71,93 @@ export function LoginScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<RouteProps>();
   const role = route.params?.role ?? 'speaker';
-  const [loading, setLoading] = useState(false);
-
   const content = ROLE_CONTENT[role];
+
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('');
+
+  // ── Google Auth Session (funciona no Expo Go sem GoogleService-Info.plist)
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: appConfig.googleWebClientId || undefined,
+    // Expo Go usa o scheme do Expo para redirect
+    redirectUri: makeRedirectUri({ scheme: 'meubest' }),
+  });
+
+  // ── Processa resposta do Google após o browser fechar
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      handleFirebaseLogin(id_token);
+    } else if (response?.type === 'error') {
+      setLoading(false);
+      Alert.alert('Erro', 'Não foi possível autenticar com o Google. Tente novamente.');
+    } else if (response?.type === 'dismiss') {
+      setLoading(false);
+    }
+  }, [response]);
+
+  const handleFirebaseLogin = async (idToken: string) => {
+    try {
+      setStatus('Autenticando...');
+      const credential = GoogleAuthProvider.credential(idToken);
+      const result = await signInWithCredential(auth, credential);
+
+      // Verifica se o perfil já existe no Firestore
+      const userRef = doc(db, 'users', result.user.uid);
+      const snap = await getDoc(userRef);
+
+      if (!snap.exists()) {
+        setStatus('Criando perfil...');
+        // Cria perfil novo — papel escolhido na tela de seleção
+        const newProfile: Partial<UserProfile> = {
+          uid: result.user.uid,
+          name: result.user.displayName ?? 'Usuário',
+          email: result.user.email ?? '',
+          photoURL: result.user.photoURL ?? '',
+          role,
+          balance: 0,
+          rating: 5.0,
+          isOnline: false,
+          isProfileComplete: false,
+          showTutorial: true,
+          gratitudeCoins: 0,
+          points: 0,
+          currentStreak: 0,
+          badges: [],
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(userRef, newProfile);
+      }
+
+      // Auth store e navegação são atualizados automaticamente pelo AuthProvider
+      setStatus('');
+    } catch (error: any) {
+      console.error('[LoginScreen] Firebase login error:', error);
+      setStatus('');
+      setLoading(false);
+      Alert.alert(
+        'Erro ao entrar',
+        error?.message ?? 'Não foi possível autenticar. Tente novamente.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (!appConfig.googleWebClientId) {
+      Alert.alert(
+        'Configuração pendente',
+        'O Google Client ID ainda não foi configurado no .env.\n\nPara obter: Firebase Console → Authentication → Sign-in method → Google → ID do cliente web',
+        [{ text: 'Entendi' }]
+      );
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLoading(true);
+    setStatus('Abrindo Google...');
+    await promptAsync();
+  };
 
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -75,40 +169,19 @@ export function LoginScreen() {
     navigation.replace('Login', { role: content.switchRole });
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      Alert.alert(
-        'Configuração pendente',
-        'Para ativar o login com Google, adicione o GoogleService-Info.plist (iOS) e google-services.json (Android) ao projeto — isso será feito no Sprint 2.',
-        [{ text: 'Entendi' }]
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
-      <LinearGradient
-        colors={[colors.background, '#FFF5EF']}
-        style={styles.gradient}
-      >
+      <LinearGradient colors={[colors.background, '#FFF5EF']} style={styles.gradient}>
         <SafeAreaView style={styles.safe}>
 
           {/* ─── Barra superior ───────────────────────────────────── */}
           <View style={styles.topBar}>
-            <TouchableOpacity
-              onPress={handleBack}
-              style={styles.backBtn}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity onPress={handleBack} style={styles.backBtn} activeOpacity={0.7}>
               <ChevronLeft size={24} color={colors.text} strokeWidth={2.5} />
             </TouchableOpacity>
 
-            {/* Badge de papel */}
             <View style={[styles.badge, { backgroundColor: content.badgeBg }]}>
               <content.Icon size={13} color={content.badgeColor} strokeWidth={2.5} />
               <Text style={[styles.badgeText, { color: content.badgeColor }]}>
@@ -116,15 +189,11 @@ export function LoginScreen() {
               </Text>
             </View>
 
-            {/* Espaçador para centralizar o badge */}
             <View style={{ width: 40 }} />
           </View>
 
-          {/* ─── Área de ilustração / contexto ────────────────────── */}
-          <LinearGradient
-            colors={content.illustrationGradient}
-            style={styles.illustration}
-          >
+          {/* ─── Área de ilustração ───────────────────────────────── */}
+          <LinearGradient colors={content.illustrationGradient} style={styles.illustration}>
             <View style={[styles.illustrationIcon, { backgroundColor: content.iconBg }]}>
               <content.Icon size={40} color={content.iconColor} strokeWidth={1.8} />
             </View>
@@ -140,24 +209,21 @@ export function LoginScreen() {
           {/* ─── Ações ────────────────────────────────────────────── */}
           <View style={styles.actions}>
             <Button
-              label={content.googleBtnLabel}
+              label={loading ? (status || 'Aguarde...') : 'Entrar com o Google'}
               onPress={handleGoogleLogin}
               size="lg"
               fullWidth
               loading={loading}
+              disabled={!request && !!appConfig.googleWebClientId}
               style={shadows.primary}
             />
 
-            <TouchableOpacity
-              onPress={handleSwitch}
-              activeOpacity={0.65}
-              style={styles.switchBtn}
-            >
+            <TouchableOpacity onPress={handleSwitch} activeOpacity={0.65} style={styles.switchBtn}>
               <Text style={styles.switchText}>{content.switchLabel}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* ─── Termos e aviso ───────────────────────────────────── */}
+          {/* ─── Rodapé ───────────────────────────────────────────── */}
           <View style={styles.footer}>
             <Text style={styles.terms}>
               Ao continuar, você concorda com os{' '}
@@ -168,7 +234,7 @@ export function LoginScreen() {
             <View style={styles.safetyBox}>
               <Text style={styles.safetyText}>
                 🤝  O Meu Best é uma rede de apoio voluntário — não substitui atendimento
-                profissional. Em crise, ligue{' '}
+                profissional. Em crise:{' '}
                 <Text style={styles.safetyHighlight}>CVV 188</Text> ou{' '}
                 <Text style={styles.safetyHighlight}>SAMU 192</Text>.
               </Text>
@@ -189,8 +255,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-
-  // ── Barra superior
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,8 +286,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.bold,
     letterSpacing: 0.1,
   },
-
-  // ── Ilustração contextual
   illustration: {
     borderRadius: borderRadius.xl,
     paddingVertical: spacing.xl,
@@ -244,8 +306,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.semibold,
     textAlign: 'center',
   },
-
-  // ── Headline
   textBlock: {
     gap: spacing.sm,
     marginBottom: spacing.xl,
@@ -263,8 +323,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: typography.weight.medium,
   },
-
-  // ── Ações
   actions: {
     gap: spacing.md,
     marginBottom: spacing.lg,
@@ -280,8 +338,6 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     textDecorationColor: `${colors.primary}60`,
   },
-
-  // ── Footer
   footer: {
     gap: spacing.sm,
   },
