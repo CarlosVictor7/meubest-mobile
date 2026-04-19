@@ -1,0 +1,52 @@
+# Dependências
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Variáveis de ambiente — NUNCA commitar .env com chaves reais
+.env
+.env.local
+.env.*.local
+
+# Arquivos de configuração do Google (Firebase — contêm chaves privadas)
+google-services.json
+GoogleService-Info.plist
+
+# EAS
+.eas/
+
+# iOS
+ios/
+*.ipa
+*.keystore
+
+# Android
+android/
+*.aab
+
+# Build outputs
+*.jsbundle
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# macOS
+.DS_Store
+*.pem
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Expo telemetria
+.expo-shared/
