@@ -77,13 +77,18 @@ export function LoginScreen() {
   const [status, setStatus] = useState('');
 
   // ── Google Auth Session
-  // Em Expo Go: redirect é exp://... (requer URI registrada no Google Cloud)
-  // Em build nativo: usa meubest:// (scheme do app)
-  const redirectUri = makeRedirectUri({ native: 'meubest://auth' });
+  // redirectUri registrado no Google Cloud Console:
+  // https://auth.expo.io/@carlosvictor7/meubest  (Expo Go)
+  // meubest://auth                                (build nativo)
+  const redirectUri = makeRedirectUri({
+    native: 'meubest://auth',
+    // Para Expo Go, aponta para o proxy registrado
+    scheme: 'https',
+  });
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: appConfig.googleWebClientId || undefined,
-    redirectUri,
+    redirectUri: 'https://auth.expo.io/@carlosvictor7/meubest',
   });
 
   // ── Processa resposta do Google após o browser fechar
