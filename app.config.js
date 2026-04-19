@@ -3,6 +3,7 @@ const IS_DEV = process.env.APP_VARIANT === 'development';
 module.exports = {
   name: IS_DEV ? 'Meu Best (Dev)' : 'Meu Best',
   slug: 'meubest',
+  scheme: 'meubest',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
