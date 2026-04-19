@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
   StatusBar,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -17,181 +19,297 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'RoleSelection'>;
 
+// ─── Copy 100% PT-BR ──────────────────────────────────────────────
+const ROLES = [
+  {
+    id: 'speaker' as const,
+    Icon: MessageCircle,
+    title: 'Preciso ser ouvido',
+    description:
+      'Estou passando por algo difícil e quero conversar com alguém que entende, sem julgamento.',
+    cta: 'Quero ser ouvido',
+    gradient: [colors.primary, '#F97B45'] as [string, string],
+    accentColor: '#FFF',
+  },
+  {
+    id: 'listener' as const,
+    Icon: Heart,
+    title: 'Quero apoiar alguém',
+    description:
+      'Já superei desafios e quero oferecer minha escuta e presença para quem precisa.',
+    cta: 'Quero ser voluntário',
+    gradient: ['#FFFFFF', '#FFFFFF'] as [string, string],
+    accentColor: colors.primary,
+    outline: true,
+  },
+] as const;
+
 export function RoleSelectionScreen() {
   const navigation = useNavigation<Nav>();
 
-  const handleSelect = (role: 'speaker' | 'listener') => {
+  // Animated scale para feedback de toque
+  const scales = useRef(ROLES.map(() => new Animated.Value(1))).current;
+
+  const handlePressIn = (i: number) => {
+    Animated.spring(scales[i], {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 50,
+    }).start();
+  };
+
+  const handlePressOut = (i: number) => {
+    Animated.spring(scales[i], {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 30,
+    }).start();
+  };
+
+  const handleSelect = (role: 'speaker' | 'listener', i: number) => {
+    handlePressOut(i);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate('Login', { role });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
-      <View style={styles.header}>
-        <Text style={styles.logo}>Meu Best</Text>
-        <Text style={styles.tagline}>Você consegue! 🧡</Text>
-      </View>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <SafeAreaView>
 
-      <Text style={styles.question}>Como você quer participar?</Text>
-      <Text style={styles.hint}>Você poderá mudar isso depois nas configurações.</Text>
-
-      <View style={styles.cards}>
-        {/* Speaker Card */}
-        <TouchableOpacity
-          onPress={() => handleSelect('speaker')}
-          activeOpacity={0.88}
-          style={[styles.card, shadows.md]}
-        >
-          <LinearGradient
-            colors={[colors.primary, colors.primaryDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.cardGradient}
-          >
-            <View style={styles.cardIcon}>
-              <MessageCircle color="#FFF" size={40} />
-            </View>
-            <Text style={[styles.cardTitle, { color: '#FFF' }]}>
-              Preciso ser ouvido
-            </Text>
-            <Text style={[styles.cardDesc, { color: 'rgba(255,255,255,0.85)' }]}>
-              Estou passando por algo difícil e quero conversar com alguém que entende.
-            </Text>
-            <View style={styles.cardCta}>
-              <Text style={styles.ctaText}>Entrar como Speaker</Text>
-              <ArrowRight color="#FFF" size={18} />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* Listener Card */}
-        <TouchableOpacity
-          onPress={() => handleSelect('listener')}
-          activeOpacity={0.88}
-          style={[styles.card, styles.cardOutline, shadows.sm]}
-        >
-          <View style={styles.cardInner}>
-            <View style={[styles.cardIcon, { backgroundColor: colors.primaryLight }]}>
-              <Heart color={colors.primary} size={40} />
-            </View>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>
-              Quero apoiar alguém
-            </Text>
-            <Text style={[styles.cardDesc, { color: colors.textMuted }]}>
-              Já superei desafios e quero oferecer minha escuta e experiência para ajudar.
-            </Text>
-            <View style={[styles.cardCta, { backgroundColor: colors.primaryLight }]}>
-              <Text style={[styles.ctaText, { color: colors.primary }]}>Entrar como Listener</Text>
-              <ArrowRight color={colors.primary} size={18} />
+          {/* ─── Branding ─────────────────────────────────────────── */}
+          <View style={styles.brand}>
+            <Text style={styles.logo}>Meu Best</Text>
+            <View style={styles.taglineRow}>
+              <Text style={styles.tagline}>Você consegue </Text>
+              <Text style={styles.taglineEmoji}>🧡</Text>
             </View>
           </View>
-        </TouchableOpacity>
-      </View>
 
-      <Text style={styles.disclaimer}>
-        ⚠️ O Meu Best é uma rede de voluntários, não um serviço de saúde mental profissional.
-      </Text>
-    </SafeAreaView>
+          {/* ─── Headline ─────────────────────────────────────────── */}
+          <View style={styles.headline}>
+            <Text style={styles.question}>Como você quer{'\n'}participar?</Text>
+            <Text style={styles.hint}>
+              Você pode mudar isso a qualquer momento nas configurações.
+            </Text>
+          </View>
+
+          {/* ─── Cards ────────────────────────────────────────────── */}
+          <View style={styles.cards}>
+            {ROLES.map((role, i) => (
+              <Animated.View
+                key={role.id}
+                style={{ transform: [{ scale: scales[i] }] }}
+              >
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPressIn={() => handlePressIn(i)}
+                  onPressOut={() => handlePressOut(i)}
+                  onPress={() => handleSelect(role.id, i)}
+                >
+                  {role.id === 'listener' ? (
+                    // ── Card outline (listener) ──
+                    <View style={[styles.card, styles.cardOutline, shadows.md]}>
+                      <View style={styles.cardContent}>
+                        <View style={[styles.iconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                          <role.Icon color={colors.primary} size={28} strokeWidth={2} />
+                        </View>
+                        <View style={styles.cardText}>
+                          <Text style={[styles.cardTitle, { color: colors.text }]}>
+                            {role.title}
+                          </Text>
+                          <Text style={[styles.cardDesc, { color: colors.textMuted }]}>
+                            {role.description}
+                          </Text>
+                        </View>
+                        <View style={[styles.ctaPill, { backgroundColor: colors.primaryLight }]}>
+                          <Text style={[styles.ctaLabel, { color: colors.primary }]}>
+                            {role.cta}
+                          </Text>
+                          <ArrowRight size={15} color={colors.primary} strokeWidth={2.5} />
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    // ── Card gradient (speaker) ──
+                    <LinearGradient
+                      colors={role.gradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.card, shadows.primary]}
+                    >
+                      <View style={styles.cardContent}>
+                        <View style={[styles.iconWrap, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                          <role.Icon color="#FFF" size={28} strokeWidth={2} />
+                        </View>
+                        <View style={styles.cardText}>
+                          <Text style={[styles.cardTitle, { color: '#FFF' }]}>
+                            {role.title}
+                          </Text>
+                          <Text style={[styles.cardDesc, { color: 'rgba(255,255,255,0.82)' }]}>
+                            {role.description}
+                          </Text>
+                        </View>
+                        <View style={[styles.ctaPill, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+                          <Text style={[styles.ctaLabel, { color: '#FFF' }]}>
+                            {role.cta}
+                          </Text>
+                          <ArrowRight size={15} color="#FFF" strokeWidth={2.5} />
+                        </View>
+                      </View>
+                    </LinearGradient>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+
+          {/* ─── Disclaimer ───────────────────────────────────────── */}
+          <View style={styles.disclaimer}>
+            <Text style={styles.disclaimerText}>
+              ⚠️{'  '}O Meu Best é uma rede de apoio entre pares, não um serviço de saúde mental
+              profissional. Em emergências ligue{' '}
+              <Text style={styles.disclaimerHighlight}>CVV 188</Text>.
+            </Text>
+          </View>
+
+        </SafeAreaView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: spacing.lg,
   },
-  header: {
+  scroll: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl,
+  },
+
+  // ── Branding
+  brand: {
     alignItems: 'center',
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
   },
   logo: {
-    fontSize: typography.size.xxxl,
+    fontSize: 38,
     fontWeight: typography.weight.black,
     color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  taglineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
   tagline: {
     fontSize: typography.size.base,
     color: colors.textMuted,
     fontWeight: typography.weight.semibold,
-    marginTop: spacing.xs,
+  },
+  taglineEmoji: {
+    fontSize: typography.size.base,
+  },
+
+  // ── Headline
+  headline: {
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
   },
   question: {
-    fontSize: typography.size.xl,
+    fontSize: 30,
     fontWeight: typography.weight.black,
     color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
+    lineHeight: 36,
+    letterSpacing: -0.5,
   },
   hint: {
     fontSize: typography.size.sm,
     color: colors.textMuted,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
+    lineHeight: 20,
+    fontWeight: typography.weight.medium,
   },
+
+  // ── Cards
   cards: {
     gap: spacing.md,
-    flex: 1,
-    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
   card: {
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
   },
-  cardGradient: {
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
   cardOutline: {
-    borderWidth: 2,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
-  cardInner: {
-    padding: spacing.xl,
+  cardContent: {
+    padding: spacing.lg,
     gap: spacing.md,
   },
-  cardIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+  iconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  cardText: {
+    gap: spacing.xs,
   },
   cardTitle: {
     fontSize: typography.size.xl,
     fontWeight: typography.weight.black,
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
   cardDesc: {
-    fontSize: typography.size.base,
-    lineHeight: 22,
+    fontSize: typography.size.sm,
+    lineHeight: 20,
     fontWeight: typography.weight.medium,
   },
-  cardCta: {
+  ctaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    paddingVertical: 8,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.full,
-    alignSelf: 'flex-start',
     marginTop: spacing.xs,
   },
-  ctaText: {
-    color: '#FFF',
-    fontWeight: typography.weight.bold,
+  ctaLabel: {
     fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
   },
+
+  // ── Disclaimer
   disclaimer: {
-    fontSize: typography.size.xs,
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
+    backgroundColor: '#FFF8F0',
+    borderRadius: borderRadius.sm,
+    padding: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFB347',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: '#7A5C3A',
     lineHeight: 18,
-    paddingHorizontal: spacing.md,
+    fontWeight: typography.weight.medium,
+  },
+  disclaimerHighlight: {
+    fontWeight: typography.weight.bold,
+    color: colors.primary,
   },
 });
