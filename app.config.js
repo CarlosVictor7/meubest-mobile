@@ -73,6 +73,7 @@ module.exports = {
     apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000',
     stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     eas: {
       projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
     },

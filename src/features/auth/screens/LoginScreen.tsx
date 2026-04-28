@@ -1,3 +1,13 @@
+/**
+ * LoginScreen — Tela de autenticação
+ *
+ * Fluxo de auth:
+ * 1. Botão principal: "Continuar com Google"
+ *    - Se Expo Go: mostra alert amigável explicando que precisa de development build
+ *    - Se Dev Build: executa Google Sign-In real
+ * 2. E-mail/Senha: APENAS se EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN === 'true'
+ *    - Toggle discreto para não confundir usuário real
+ */
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -6,20 +16,24 @@ import {
   Alert,
   StatusBar,
   TouchableOpacity,
-  ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, MessageCircle, Heart } from 'lucide-react-native';
+import { ChevronLeft, MessageCircle, Heart, Globe } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri } from 'expo-auth-session';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import Constants from 'expo-constants';
 import { auth, db } from '@shared/services/firebase';
 import { appConfig } from '@constants/appConfig';
 import type { AuthStackParamList } from '@navigation/types';
@@ -33,7 +47,16 @@ WebBrowser.maybeCompleteAuthSession();
 type RouteProps = RouteProp<AuthStackParamList, 'Login'>;
 type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 
-// ─── Conteúdo contextual por papel ────────────────────────────────
+// ─── Flag de dev — email/senha visível apenas em dev build com env var ──────
+const DEV_EMAIL_LOGIN_ENABLED =
+  process.env.EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN === 'true';
+
+// ─── Detecta Expo Go ─────────────────────────────────────────────────────────
+function isExpoGo(): boolean {
+  return Constants.executionEnvironment === 'storeClient';
+}
+
+// ─── Conteúdo contextual por papel ──────────────────────────────────────────
 const ROLE_CONTENT = {
   speaker: {
     badge: 'Quero ser ouvido',
@@ -42,7 +65,7 @@ const ROLE_CONTENT = {
     Icon: MessageCircle,
     iconBg: `${colors.primary}12`,
     iconColor: colors.primary,
-    illustrationGradient: [colors.primaryLight, '#FFE8DC'] as [string, string],
+    illustrationGradient: [colors.background, '#FFE8DC'] as [string, string],
     headline: 'Você deu o\nprimeiro passo.',
     subheadline:
       'Conectamos você a alguém que já passou pelo que você está vivendo — presente, sem julgamento.',
@@ -67,6 +90,7 @@ const ROLE_CONTENT = {
   },
 } as const;
 
+// ────────────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<RouteProps>();
@@ -75,48 +99,50 @@ export function LoginScreen() {
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showDevEmailForm, setShowDevEmailForm] = useState(false);
 
-  // ── Google Auth Session
-  // redirectUri registrado no Google Cloud Console:
-  // https://auth.expo.io/@carlosvictor7/meubest  (Expo Go)
-  // meubest://auth                                (build nativo)
-  const redirectUri = makeRedirectUri({
-    native: 'meubest://auth',
-    // Para Expo Go, aponta para o proxy registrado
-    scheme: 'https',
-  });
-
+  // ── Google Auth Session ────────────────────────────────────────────
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: appConfig.googleWebClientId || undefined,
-    redirectUri: 'https://auth.expo.io/@carlosvictor7/meubest',
+    iosClientId: appConfig.googleIosClientId || undefined,
+    redirectUri: makeRedirectUri({ scheme: 'meubest' }),
+    scopes: ['openid', 'profile', 'email'],
   });
 
-  // ── Processa resposta do Google após o browser fechar
+  // ── Processa resposta do Google ────────────────────────────────────
   useEffect(() => {
-    if (response?.type === 'success') {
+    if (!response) return;
+
+    if (response.type === 'success') {
       const { id_token } = response.params;
-      handleFirebaseLogin(id_token);
-    } else if (response?.type === 'error') {
+      if (id_token) {
+        handleFirebaseGoogleLogin(id_token);
+      } else {
+        setLoading(false);
+        Alert.alert('Erro', 'Token de autenticação inválido.');
+      }
+    } else if (response.type === 'error') {
       setLoading(false);
       Alert.alert('Erro', 'Não foi possível autenticar com o Google. Tente novamente.');
-    } else if (response?.type === 'dismiss') {
+    } else if (response.type === 'dismiss' || response.type === 'cancel') {
       setLoading(false);
     }
   }, [response]);
 
-  const handleFirebaseLogin = async (idToken: string) => {
+  // ── Firebase Google Login ──────────────────────────────────────────
+  const handleFirebaseGoogleLogin = async (idToken: string) => {
     try {
       setStatus('Autenticando...');
       const credential = GoogleAuthProvider.credential(idToken);
       const result = await signInWithCredential(auth, credential);
 
-      // Verifica se o perfil já existe no Firestore
       const userRef = doc(db, 'users', result.user.uid);
       const snap = await getDoc(userRef);
 
       if (!snap.exists()) {
         setStatus('Criando perfil...');
-        // Cria perfil novo — papel escolhido na tela de seleção
         const newProfile: Partial<UserProfile> = {
           uid: result.user.uid,
           name: result.user.displayName ?? 'Usuário',
@@ -124,12 +150,14 @@ export function LoginScreen() {
           photoURL: result.user.photoURL ?? '',
           role,
           balance: 0,
+          totalEarnings: 0,
           rating: 5.0,
-          isOnline: false,
+          isOnline: role === 'listener',
           isProfileComplete: false,
           showTutorial: true,
           gratitudeCoins: 0,
           points: 0,
+          level: 1,
           currentStreak: 0,
           badges: [],
           createdAt: new Date().toISOString(),
@@ -137,34 +165,59 @@ export function LoginScreen() {
         await setDoc(userRef, newProfile);
       }
 
-      // Auth store e navegação são atualizados automaticamente pelo AuthProvider
       setStatus('');
     } catch (error: any) {
-      console.error('[LoginScreen] Firebase login error:', error);
+      console.error('[LoginScreen] Google Firebase error:', error);
       setStatus('');
       setLoading(false);
-      Alert.alert(
-        'Erro ao entrar',
-        error?.message ?? 'Não foi possível autenticar. Tente novamente.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Erro ao entrar', error?.message ?? 'Não foi possível autenticar.');
     }
   };
 
-  const handleGoogleLogin = async () => {
-    if (!appConfig.googleWebClientId) {
+  // ── Botão "Continuar com Google" ──────────────────────────────────
+  const handleGooglePress = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    if (isExpoGo()) {
+      // Expo Go não suporta custom scheme OAuth
       Alert.alert(
-        'Configuração pendente',
-        'O Google Client ID ainda não foi configurado no .env.\n\nPara obter: Firebase Console → Authentication → Sign-in method → Google → ID do cliente web',
-        [{ text: 'Entendi' }]
+        'Google Sign-In',
+        'O login com Google requer um Development Build.\n\nPara testes, use e-mail e senha abaixo, ou gere um build de desenvolvimento com:\n\neas build --profile development',
+        [
+          { text: 'Entendi', style: 'default' },
+          {
+            text: 'Usar e-mail',
+            onPress: () => setShowDevEmailForm(true),
+          },
+        ]
       );
       return;
     }
 
+    // Dev Build — dispara o fluxo real
+    if (!request) return;
+    setLoading(true);
+    await promptAsync();
+  };
+
+  // ── Email/Senha (dev only) ─────────────────────────────────────────
+  const handleEmailLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Campos obrigatórios', 'Preencha e-mail e senha.');
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    setStatus('Abrindo Google...');
-    await promptAsync();
+    setStatus('Entrando...');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setStatus('');
+    } catch (error: any) {
+      console.error('[LoginScreen] Email login error:', error);
+      setStatus('');
+      setLoading(false);
+      Alert.alert('Erro ao entrar', 'E-mail ou senha incorretos.', [{ text: 'OK' }]);
+    }
   };
 
   const handleBack = () => {
@@ -177,91 +230,165 @@ export function LoginScreen() {
     navigation.replace('Login', { role: content.switchRole });
   };
 
+  // ─── Render ─────────────────────────────────────────────────────────
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       <LinearGradient colors={[colors.background, '#FFF5EF']} style={styles.gradient}>
         <SafeAreaView style={styles.safe}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
 
-          {/* ─── Barra superior ───────────────────────────────────── */}
-          <View style={styles.topBar}>
-            <TouchableOpacity onPress={handleBack} style={styles.backBtn} activeOpacity={0.7}>
-              <ChevronLeft size={24} color={colors.text} strokeWidth={2.5} />
-            </TouchableOpacity>
+            {/* ─── Top bar ──────────────────────────────────────────── */}
+            <View style={styles.topBar}>
+              <TouchableOpacity onPress={handleBack} style={styles.backBtn} activeOpacity={0.7}>
+                <ChevronLeft size={24} color={colors.text} strokeWidth={2.5} />
+              </TouchableOpacity>
 
-            <View style={[styles.badge, { backgroundColor: content.badgeBg }]}>
-              <content.Icon size={13} color={content.badgeColor} strokeWidth={2.5} />
-              <Text style={[styles.badgeText, { color: content.badgeColor }]}>
-                {content.badge}
+              <View style={[styles.badge, { backgroundColor: content.badgeBg }]}>
+                <content.Icon size={13} color={content.badgeColor} strokeWidth={2.5} />
+                <Text style={[styles.badgeText, { color: content.badgeColor }]}>
+                  {content.badge}
+                </Text>
+              </View>
+
+              <View style={{ width: 40 }} />
+            </View>
+
+            {/* ─── Ilustração ───────────────────────────────────────── */}
+            <LinearGradient colors={content.illustrationGradient} style={styles.illustration}>
+              <View style={[styles.illustrationIcon, { backgroundColor: content.iconBg }]}>
+                <content.Icon size={40} color={content.iconColor} strokeWidth={1.8} />
+              </View>
+              <Text style={styles.motivational}>{content.motivational}</Text>
+            </LinearGradient>
+
+            {/* ─── Headline ─────────────────────────────────────────── */}
+            <View style={styles.textBlock}>
+              <Text style={styles.headline}>{content.headline}</Text>
+              <Text style={styles.subheadline}>{content.subheadline}</Text>
+            </View>
+
+            {/* ─── Ações ────────────────────────────────────────────── */}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.actions}
+            >
+              {/* Botão PRINCIPAL — Google */}
+              {!showDevEmailForm && (
+                <TouchableOpacity
+                  onPress={handleGooglePress}
+                  style={[styles.googleBtn, shadows.primary]}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                >
+                  <View style={styles.googleIconWrap}>
+                    <Globe size={22} color={colors.textInverted} />
+                  </View>
+                  <Text style={styles.googleBtnText}>
+                    {loading ? (status || 'Aguarde...') : 'Continuar com Google'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Formulário email/senha — dev only */}
+              {(DEV_EMAIL_LOGIN_ENABLED || showDevEmailForm) && (
+                <View style={styles.emailSection}>
+                  {!showDevEmailForm ? (
+                    // Toggle discreto (só quando flag dev ativa)
+                    <TouchableOpacity
+                      onPress={() => setShowDevEmailForm(true)}
+                      style={styles.devToggle}
+                    >
+                      <Text style={styles.devToggleText}>Entrar com e-mail</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    // Formulário completo
+                    <View style={styles.emailForm}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="E-mail"
+                        placeholderTextColor={colors.textMutedValue}
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        autoCorrect={false}
+                        editable={!loading}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Senha"
+                        placeholderTextColor={colors.textMutedValue}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry
+                        editable={!loading}
+                      />
+                      <Button
+                        label={loading ? (status || 'Aguarde...') : 'Entrar'}
+                        onPress={handleEmailLogin}
+                        size="lg"
+                        fullWidth
+                        loading={loading}
+                        style={shadows.primary}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowDevEmailForm(false)}
+                        style={styles.switchBtn}
+                        activeOpacity={0.65}
+                      >
+                        <Text style={styles.switchText}>← Voltar ao Google</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Trocar papel */}
+              <TouchableOpacity onPress={handleSwitch} activeOpacity={0.65} style={styles.switchBtn}>
+                <Text style={styles.switchText}>{content.switchLabel}</Text>
+              </TouchableOpacity>
+            </KeyboardAvoidingView>
+
+            {/* ─── Rodapé ───────────────────────────────────────────── */}
+            <View style={styles.footer}>
+              <Text style={styles.terms}>
+                Ao continuar, você concorda com os{' '}
+                <Text style={styles.termsLink}>Termos de Uso</Text> e a{' '}
+                <Text style={styles.termsLink}>Política de Privacidade</Text>.
               </Text>
+
+              <View style={styles.safetyBox}>
+                <Text style={styles.safetyText}>
+                  🤝  O Meu Best é uma rede de apoio voluntário — não substitui atendimento
+                  profissional. Em crise:{' '}
+                  <Text style={styles.safetyHighlight}>CVV 188</Text> ou{' '}
+                  <Text style={styles.safetyHighlight}>SAMU 192</Text>.
+                </Text>
+              </View>
             </View>
 
-            <View style={{ width: 40 }} />
-          </View>
-
-          {/* ─── Área de ilustração ───────────────────────────────── */}
-          <LinearGradient colors={content.illustrationGradient} style={styles.illustration}>
-            <View style={[styles.illustrationIcon, { backgroundColor: content.iconBg }]}>
-              <content.Icon size={40} color={content.iconColor} strokeWidth={1.8} />
-            </View>
-            <Text style={styles.motivational}>{content.motivational}</Text>
-          </LinearGradient>
-
-          {/* ─── Headline ─────────────────────────────────────────── */}
-          <View style={styles.textBlock}>
-            <Text style={styles.headline}>{content.headline}</Text>
-            <Text style={styles.subheadline}>{content.subheadline}</Text>
-          </View>
-
-          {/* ─── Ações ────────────────────────────────────────────── */}
-          <View style={styles.actions}>
-            <Button
-              label={loading ? (status || 'Aguarde...') : 'Entrar com o Google'}
-              onPress={handleGoogleLogin}
-              size="lg"
-              fullWidth
-              loading={loading}
-              disabled={!request && !!appConfig.googleWebClientId}
-              style={shadows.primary}
-            />
-
-            <TouchableOpacity onPress={handleSwitch} activeOpacity={0.65} style={styles.switchBtn}>
-              <Text style={styles.switchText}>{content.switchLabel}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ─── Rodapé ───────────────────────────────────────────── */}
-          <View style={styles.footer}>
-            <Text style={styles.terms}>
-              Ao continuar, você concorda com os{' '}
-              <Text style={styles.termsLink}>Termos de Uso</Text> e a{' '}
-              <Text style={styles.termsLink}>Política de Privacidade</Text>.
-            </Text>
-
-            <View style={styles.safetyBox}>
-              <Text style={styles.safetyText}>
-                🤝  O Meu Best é uma rede de apoio voluntário — não substitui atendimento
-                profissional. Em crise:{' '}
-                <Text style={styles.safetyHighlight}>CVV 188</Text> ou{' '}
-                <Text style={styles.safetyHighlight}>SAMU 192</Text>.
-              </Text>
-            </View>
-          </View>
-
+          </ScrollView>
         </SafeAreaView>
       </LinearGradient>
     </View>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1 },
   gradient: { flex: 1 },
-  safe: {
-    flex: 1,
+  safe: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xl,
   },
   topBar: {
     flexDirection: 'row',
@@ -310,7 +437,7 @@ const styles = StyleSheet.create({
   },
   motivational: {
     fontSize: typography.size.sm,
-    color: colors.textMuted,
+    color: colors.textMutedValue,
     fontWeight: typography.weight.semibold,
     textAlign: 'center',
   },
@@ -327,7 +454,7 @@ const styles = StyleSheet.create({
   },
   subheadline: {
     fontSize: typography.size.base,
-    color: colors.textMuted,
+    color: colors.textMutedValue,
     lineHeight: 22,
     fontWeight: typography.weight.medium,
   },
@@ -335,10 +462,61 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-  switchBtn: {
+
+  // ── Botão Google (principal)
+  googleBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  googleIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  googleBtnText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: typography.tracking.wide,
+    textTransform: 'uppercase',
+  },
+
+  // ── Email (dev only)
+  emailSection: { gap: spacing.sm },
+  devToggle: {
     alignSelf: 'center',
     paddingVertical: spacing.xs,
   },
+  devToggleText: {
+    fontSize: typography.size.sm,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.semibold,
+    textDecorationLine: 'underline',
+  },
+  emailForm: { gap: spacing.md },
+  input: {
+    height: 52,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.size.base,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+
+  // ── Misc
+  switchBtn: { alignSelf: 'center', paddingVertical: spacing.xs },
   switchText: {
     fontSize: typography.size.sm,
     color: colors.primary,
@@ -346,12 +524,10 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     textDecorationColor: `${colors.primary}60`,
   },
-  footer: {
-    gap: spacing.sm,
-  },
+  footer: { gap: spacing.sm },
   terms: {
     fontSize: 11,
-    color: colors.textMuted,
+    color: colors.textMutedValue,
     textAlign: 'center',
     lineHeight: 17,
   },

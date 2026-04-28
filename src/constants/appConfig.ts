@@ -13,6 +13,7 @@ interface AppConfig {
   apiUrl: string;
   stripePublishableKey: string;
   googleWebClientId: string;
+  googleIosClientId: string;
   easProjectId: string;
 }
 
@@ -31,5 +32,6 @@ export const appConfig: AppConfig = {
   apiUrl: extra.apiUrl ?? 'http://localhost:3000',
   stripePublishableKey: extra.stripePublishableKey ?? '',
   googleWebClientId: extra.googleWebClientId ?? '',
+  googleIosClientId: extra.googleIosClientId ?? '',
   easProjectId: extra.eas?.projectId ?? '',
 };

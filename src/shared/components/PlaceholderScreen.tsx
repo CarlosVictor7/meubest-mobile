@@ -1,22 +1,38 @@
+/**
+ * PlaceholderScreen — Tela premium "Em breve"
+ * Sem textos técnicos de dev mode visíveis ao usuário.
+ */
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing } from '@constants/theme';
+import { Clock } from 'lucide-react-native';
+import { colors, typography, spacing, borderRadius, shadows } from '@constants/theme';
 
 interface PlaceholderScreenProps {
   title: string;
+  /** @deprecated Use `message` instead. Mantido para compatibilidade. */
   emoji?: string;
+  /** @deprecated Mantido para compatibilidade. */
   subtitle?: string;
+  message?: string;
 }
 
-export function PlaceholderScreen({ title, emoji = '🚧', subtitle }: PlaceholderScreenProps) {
+export function PlaceholderScreen({
+  title,
+  message = 'Estamos preparando essa área para você.',
+}: PlaceholderScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.emoji}>{emoji}</Text>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
-        <Text style={styles.note}>Sprint 3+ — Em desenvolvimento</Text>
+        {/* Ícone */}
+        <View style={styles.iconWrap}>
+          <Clock size={40} color={colors.primary} strokeWidth={1.8} />
+        </View>
+
+        {/* Textos */}
+        <Text style={styles.title}>{title.toUpperCase()}</Text>
+        <Text style={styles.message}>{message}</Text>
+        <Text style={styles.note}>Em breve você poderá acompanhar tudo por aqui.</Text>
       </View>
     </SafeAreaView>
   );
@@ -33,32 +49,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
+    paddingBottom: 100, // espaço para o BottomNav fixo
   },
-  emoji: {
-    fontSize: 64,
+  iconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    ...shadows.sm,
   },
   title: {
-    fontSize: typography.size.xl,
+    fontSize: typography.size.xxl,
     fontWeight: typography.weight.black,
     color: colors.text,
     textAlign: 'center',
+    letterSpacing: typography.tracking.tight,
+    lineHeight: 32,
   },
-  subtitle: {
+  message: {
     fontSize: typography.size.base,
-    color: colors.textMuted,
+    color: colors.textMutedValue,
     textAlign: 'center',
     lineHeight: 22,
+    fontWeight: typography.weight.medium,
   },
   note: {
-    fontSize: typography.size.xs,
+    fontSize: typography.size.sm,
     color: colors.primary,
-    fontWeight: typography.weight.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: spacing.md,
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 100,
+    fontWeight: typography.weight.semibold,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 });

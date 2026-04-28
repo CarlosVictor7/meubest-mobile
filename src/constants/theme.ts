@@ -1,46 +1,50 @@
 // Design System — Meu Best Mobile
-// Alinhado com a identidade visual da versão web
+// Alinhado 100% com a identidade visual da versão web (index.css + Dashboard.tsx)
+// Web palette: dbm-red #E1301D, dbm-cream #FDF6F0, dbm-pink #FCE7E9, dbm-darkblue #1A1A1A
 
 export const colors = {
-  // Brand
-  primary: '#FF8C61',
-  primaryDark: '#FF5C35',
-  primaryLight: '#FFF5F0',
+  // ── Brand (alinhado com a web)
+  primary: '#E1301D',          // dbm-red — cor principal (botões, tabs ativas, badges)
+  primaryDark: '#C4200A',      // hover / pressed state
+  primaryLight: '#FCE7E9',     // dbm-pink — fundo de badges, bordas de cards, accent suave
 
-  // Backgrounds
-  background: '#FDF8F5',
-  surface: '#FFFFFF',
-  surfaceAlt: '#F9F9F9',
+  // ── Backgrounds
+  background: '#FDF6F0',       // dbm-cream — fundo global
+  surface: '#FFFFFF',          // cards, modais
+  surfaceAlt: '#F9F4F1',       // alternativa levemente mais quente
 
-  // Text
-  text: '#333333',
-  textMuted: '#999999',
-  textInverted: '#FFFFFF',
-  textDark: '#2D2D2D',
+  // ── Dark cards (cards pretos da web)
+  dark: '#1A1A1A',             // dbm-darkblue — fundo de BlackCards
+  darkSurface: '#111111',
+  darkBorder: 'rgba(255,255,255,0.08)',
 
-  // Borders
-  border: '#EAD7CC',
-  borderLight: '#F0F0F0',
+  // ── Text
+  text: '#1A1A1A',             // dbm-darkblue — texto principal
+  textMuted: '#1A1A1A',        // 40% opacity na web — usar com opacity ou cor diluída
+  textMutedValue: 'rgba(26,26,26,0.45)',
+  textInverted: '#FFFFFF',     // sobre fundos escuros
 
-  // Semantic
-  success: '#4CAF50',
-  successLight: '#E8F5E9',
-  danger: '#FF5252',
-  dangerLight: '#FFEBEE',
-  warning: '#FFD54F',
-  warningLight: '#FFF3E0',
-  info: '#64B5F6',
-  infoLight: '#E3F2FD',
+  // ── Borders (border da web = dbm-pink)
+  border: '#FCE7E9',           // borda padrão dos cards
+  borderDark: 'rgba(26,26,26,0.12)',
 
-  // Dark mode (preparado para v2)
-  dark: '#2D2D2D',
-  darkSurface: '#1A1A1A',
-  darkBorder: 'rgba(255,255,255,0.1)',
+  // ── Semantic
+  success: '#22C55E',
+  successLight: '#DCFCE7',
+  danger: '#E1301D',
+  dangerLight: '#FCE7E9',
+  warning: '#F59E0B',
+  warningLight: '#FEF3C7',
+  info: '#3B82F6',
+  infoLight: '#DBEAFE',
 
-  // Special
-  coins: '#FFD54F',
-  overlay: 'rgba(0,0,0,0.5)',
-  overlayHeavy: 'rgba(0,0,0,0.8)',
+  // ── Gamification
+  coins: '#F59E0B',            // moedas douradas
+  flame: '#F97316',            // streak de fogo
+
+  // ── UI misc
+  overlay: 'rgba(26,26,26,0.6)',
+  overlayLight: 'rgba(26,26,26,0.4)',
 } as const;
 
 export const spacing = {
@@ -50,7 +54,7 @@ export const spacing = {
   lg: 24,
   xl: 32,
   xxl: 48,
-  xxxl: 64,
+  xxxl: 72,   // Espaço reservado para BottomNav flutuante
 } as const;
 
 export const borderRadius = {
@@ -58,7 +62,7 @@ export const borderRadius = {
   sm: 12,
   md: 20,
   lg: 28,
-  xl: 36,
+  xl: 40,     // Cards grandes da web (rounded-[40px])
   xxl: 50,
   full: 9999,
 } as const;
@@ -90,36 +94,54 @@ export const typography = {
     extrabold: '800' as const,
     black: '900' as const,
   },
+
+  // Letter spacing (tracking)
+  tracking: {
+    tight: -0.5,
+    normal: 0,
+    wide: 1,
+    wider: 2,
+    widest: 3,     // uppercase tracking-widest da web
+  },
 } as const;
 
 export const shadows = {
   sm: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
   md: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 6,
   },
   lg: {
-    shadowColor: '#FF8C61',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
     elevation: 12,
   },
   primary: {
-    shadowColor: '#FF8C61',
+    // Sombra colorida para botão principal — alinhado com shadow-2xl da web
+    shadowColor: '#E1301D',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.28,
     shadowRadius: 16,
     elevation: 10,
+  },
+  nav: {
+    // Sombra do BottomNav flutuante
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.15,
+    shadowRadius: 45,
+    elevation: 20,
   },
 } as const;
 

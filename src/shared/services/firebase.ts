@@ -1,34 +1,28 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { appConfig } from '@constants/appConfig';
 
-// Evita reinicializar em hot reload
-const app = getApps().length === 0
-  ? initializeApp(appConfig.firebase)
-  : getApp();
+// Verifica ANTES de inicializar para detectar primeiro boot vs hot reload
+const isFirstInit = getApps().length === 0;
 
-// Firebase Auth com persistência via AsyncStorage
-// Usa import dinâmico para compatibilidade com Firebase v12 + React Native
-let _auth: ReturnType<typeof getAuth>;
+const app = isFirstInit ? initializeApp(appConfig.firebase) : getApp();
 
-if (getApps().length <= 1 && !getApps()[0]?.options?.projectId) {
-  // Primeiro boot — inicializa com persistência
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { getReactNativePersistence } = require('firebase/auth');
-  _auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-} else {
-  _auth = getAuth(app);
-}
+// ── Firebase Auth com persistência AsyncStorage ──────────────────
+// Usa require() para evitar erro de tipo com getReactNativePersistence no SDK 12
+// Ref: https://firebase.google.com/docs/auth/web/auth-state-persistence
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { initializeAuth, getAuth, getReactNativePersistence } = require('firebase/auth');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AsyncStorage = require('@react-native-async-storage/async-storage').default;
 
-export const auth = _auth;
+// isFirstInit garante que initializeAuth só é chamado uma vez
+// Em hot reload (isFirstInit=false), reutiliza a instância existente via getAuth
+export const auth = isFirstInit
+  ? initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) })
+  : getAuth(app);
 
-// @ts-ignore — custom database ID
+// @ts-ignore — custom Firestore database ID
 export const db = getFirestore(app, appConfig.firebase.firestoreDatabaseId);
 export const storage = getStorage(app);
 
