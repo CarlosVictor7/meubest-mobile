@@ -11,6 +11,7 @@ interface NoticeCardProps {
   title?: string;
   body: string;
   highlight?: string;
+  footer?: string;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -18,6 +19,7 @@ export function NoticeCard({
   title = 'Aviso Importante',
   body,
   highlight,
+  footer,
   style,
 }: NoticeCardProps) {
   return (
@@ -37,6 +39,9 @@ export function NoticeCard({
           {body}
           {highlight && (
             <Text style={styles.highlight}> {highlight}</Text>
+          )}
+          {footer && (
+            <Text style={styles.body}>{footer}</Text>
           )}
         </Text>
       </View>

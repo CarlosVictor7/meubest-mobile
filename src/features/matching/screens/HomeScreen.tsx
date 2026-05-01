@@ -45,11 +45,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '@navigation/types';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
-import { Avatar, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
-import { BlackCard } from '@shared/components/BlackCard';
-import { NoticeCard } from '@shared/components/NoticeCard';
-import { StatsCard } from '@shared/components/StatsCard';
-import { SegmentedControl } from '@shared/components/SegmentedControl';
+import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
+import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
@@ -167,89 +164,11 @@ export function HomeScreen() {
         bounces
       >
         {/* ═══════════════════════════════════════════════════════════
-            1. HEADER
+            1-3. HEADER PADRÃO (avatar, segmented, online, notice)
         ═══════════════════════════════════════════════════════════ */}
-        <SafeAreaView edges={['top']}>
-          <View style={styles.header}>
-            {/* Avatar + saudação */}
-            <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.85}>
-              <View style={styles.avatarBox}>
-                {profile?.photoURL ? (
-                  <Avatar photoURL={profile.photoURL} name={profile.name} size="sm" />
-                ) : (
-                  <View style={styles.avatarInitial}>
-                    <Text style={styles.avatarInitialText}>{initials}</Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.headerText}>
-                <Text style={styles.greeting}>
-                  OLÁ, {name.toUpperCase()}!
-                </Text>
-                <Text style={styles.greetingSub}>O seu melhor começa aqui</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Stats + Sino */}
-            <View style={styles.headerRight}>
-              {/* Streak + Moedas */}
-              <TouchableOpacity style={styles.miniStats}>
-                <View style={styles.miniStat}>
-                  <Flame size={11} color="#F97316" fill="#F97316" />
-                  <Text style={styles.miniStatText}>{streak}</Text>
-                </View>
-                <View style={styles.miniStat}>
-                  <Coins size={11} color={colors.coins} />
-                  <Text style={styles.miniStatText}>{coins}</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Toggle Online (apenas listener, no header) */}
-              {isListener && (
-                <View style={styles.onlineRow}>
-                  <Switch
-                    value={isOnline}
-                    onValueChange={toggleOnlineStatus}
-                    trackColor={{ false: 'rgba(26,26,26,0.1)', true: '#22C55E' }}
-                    thumbColor={colors.surface}
-                    style={styles.switch}
-                  />
-                  <Text style={[styles.onlineTxt, isOnline && styles.onlineTxtActive]}>
-                    {isOnline ? 'ON' : 'OFF'}
-                  </Text>
-                </View>
-              )}
-
-              {/* Sino */}
-              <TouchableOpacity style={styles.bellBtn}>
-                <Bell size={18} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SafeAreaView>
+        <TabHeader />
 
         <View style={styles.content}>
-
-          {/* ═══════════════════════════════════════════════════════
-              2. SEGMENTED CONTROL — Ouvir / Apoiar
-          ═══════════════════════════════════════════════════════ */}
-          <View style={styles.segmentWrap}>
-            <SegmentedControl
-              options={ROLE_OPTIONS}
-              value={profile?.role ?? 'speaker'}
-              onChange={handleRoleChange}
-              disabled={isUpdatingRole}
-            />
-            <Text style={styles.segmentHint}>Vire a chave aqui!</Text>
-          </View>
-
-          {/* ═══════════════════════════════════════════════════════
-              3. NOTICE CARD — Aviso Importante
-          ═══════════════════════════════════════════════════════ */}
-          <NoticeCard
-            body="Somos uma rede de acolhimento formada por voluntários."
-            highlight="Não use em emergências."
-          />
 
           {/* ═══════════════════════════════════════════════════════
               4. BLACK CARD — Disponibilidade (listener) / Progresso (speaker)
