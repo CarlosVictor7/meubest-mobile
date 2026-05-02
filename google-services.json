@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "665557596754-oksq94pbbvkc1abmpini1eil0jgj0br4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.meubest.app",
+            "certificate_hash": "0de0c06588d2229c8f25e2b17feaf97f8c10aec8"
+          }
+        },
+        {
           "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
           "client_type": 3
         }
