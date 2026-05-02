@@ -1,30 +1,24 @@
 /**
- * googleAuth.ts — Google Sign-In service
+ * googleAuth.ts — Google Sign-In service nativo
  *
- * Encapsula o fluxo de autenticação Google para o Meu Best Mobile.
+ * Encapsula o fluxo de autenticação Google para o Meu Best Mobile usando a lib nativa.
  *
  * IMPORTANTE:
- * - No Expo Go: sempre retorna `expoGoLimitation` (Google OAuth
- *   requer custom scheme nativo, não suportado no Expo Go).
- * - No Development Build (EAS): funciona completamente com
- *   expo-auth-session + GoogleAuthProvider do Firebase.
+ * - No Expo Go: sempre lança erro `expoGoLimitation` (pois usa código nativo não suportado no Go).
+ * - No Development Build (EAS): funciona completamente usando o SDK nativo do Google
+ *   e GoogleAuthProvider do Firebase.
  *
  * Refs:
- * - https://docs.expo.dev/guides/google-authentication/
+ * - https://github.com/react-native-google-signin/google-signin
  * - https://firebase.google.com/docs/auth/web/google-signin
  */
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri, type AuthSessionResult } from 'expo-auth-session';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Constants from 'expo-constants';
 import { auth, db } from './firebase';
 import { appConfig } from '@constants/appConfig';
 import type { UserProfile } from '@models/user';
-
-// Necessário para fechar o browser corretamente ao retornar
-WebBrowser.maybeCompleteAuthSession();
 
 // ─── Tipos ─────────────────────────────────────────────────────────
 export type GoogleSignInResult =
@@ -38,59 +32,43 @@ function isExpoGo(): boolean {
   return Constants.executionEnvironment === 'storeClient';
 }
 
-// ─── Hook de sign-in Google ────────────────────────────────────────
-/**
- * Retorna `[request, response, promptAsync]` e a função `handleGoogleSignIn`.
- *
- * Uso:
- * ```tsx
- * const { handleGoogleSignIn, isLoading } = useGoogleSignIn({ role });
- * ```
- */
-export function buildGoogleAuthRequest() {
-  return Google.useAuthRequest({
-    clientId: appConfig.googleWebClientId,
-    iosClientId: appConfig.googleIosClientId,
-    redirectUri: makeRedirectUri({ scheme: 'meubest' }),
-    scopes: ['openid', 'profile', 'email'],
-  });
-}
+// Configuração estática do GoogleSignin
+GoogleSignin.configure({
+  webClientId: appConfig.googleWebClientId, // Obrigatório para Firebase
+  iosClientId: appConfig.googleIosClientId,
+  // scopes: ['profile', 'email'], // Defaults já incluem profile e email
+});
 
 /**
- * Processa a resposta do Google OAuth e cria/atualiza o perfil no Firestore.
+ * Inicia o fluxo de Sign-In do Google nativo e integra com Firebase Auth.
  *
- * @param response - resposta do `useAuthRequest` prompt
- * @param role - papel selecionado na RoleSelectionScreen
+ * @param role - papel selecionado na RoleSelectionScreen ('speaker' | 'listener')
  */
-export async function handleGoogleResponse(
-  response: AuthSessionResult | null,
+export async function signInWithGoogle(
   role: 'speaker' | 'listener' = 'speaker'
 ): Promise<GoogleSignInResult> {
   if (isExpoGo()) {
     return { type: 'expoGoLimitation' };
   }
 
-  if (!response) return { type: 'cancelled' };
-
-  if (response.type === 'cancel' || response.type === 'dismiss') {
-    return { type: 'cancelled' };
-  }
-
-  if (response.type !== 'success') {
-    return { type: 'error', message: 'Autenticação não foi completada.' };
-  }
-
-  const { id_token } = response.params;
-  if (!id_token) {
-    return { type: 'error', message: 'Token de autenticação inválido.' };
-  }
-
   try {
-    const credential = GoogleAuthProvider.credential(id_token);
+    // 1. Verifica dependências do Google Play Services (Android)
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+    // 2. Abre o pop-up nativo de autenticação do Google
+    const userInfo = await GoogleSignin.signIn();
+    
+    // 3. Verifica o token ID
+    if (!userInfo.data?.idToken) {
+      return { type: 'error', message: 'Token de autenticação inválido ou ausente.' };
+    }
+
+    // 4. Cria a credencial no Firebase Auth
+    const credential = GoogleAuthProvider.credential(userInfo.data.idToken);
     const userCredential = await signInWithCredential(auth, credential);
     const { uid, displayName, email, photoURL } = userCredential.user;
 
-    // Upsert do perfil no Firestore
+    // 5. Upsert de perfil mínimo no Firestore (preparando para a próxima task)
     const userRef = doc(db, 'users', uid);
     const userSnap = await getDoc(userRef);
     const isNewUser = !userSnap.exists();
@@ -116,7 +94,7 @@ export async function handleGoogleResponse(
       };
       await setDoc(userRef, profile);
     } else {
-      // Usuário existente: apenas atualiza informações básicas do perfil Google
+      // Usuário existente: apenas atualiza informações básicas vindo do Google
       await setDoc(
         userRef,
         { name: displayName, photoURL, email },
@@ -126,7 +104,13 @@ export async function handleGoogleResponse(
 
     return { type: 'success', uid, isNewUser };
   } catch (error: any) {
-    console.error('[googleAuth] handleGoogleResponse error:', error);
+    console.error('[googleAuth] signInWithGoogle error:', error);
+    
+    // Identificar cancelamento do usuário
+    if (error.code === 'SIGN_IN_CANCELLED' || error.code === '12501') {
+      return { type: 'cancelled' };
+    }
+
     return {
       type: 'error',
       message: error?.message ?? 'Erro ao autenticar com o Google.',

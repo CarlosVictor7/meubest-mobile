@@ -1,86 +1,66 @@
-# Google Sign-In — Development Build
+# Google Sign-In — Development Build (Nativo)
 
-> Por que o Google Sign-In não funciona no Expo Go e como gerar um build de desenvolvimento.
+> Por que o Google Sign-In não funciona no Expo Go e como gerar um build de desenvolvimento com a biblioteca nativa.
 
 ---
 
 ## Por que não funciona no Expo Go?
 
-O Google OAuth exige um **custom URI scheme** nativo (ex: `meubest://`).
-O Expo Go usa seu próprio scheme (`exp://`), que o Google não aceita como redirect autorizado.
+O pacote oficial `@react-native-google-signin/google-signin` possui **código nativo** (Java/Kotlin no Android, Swift/Objective-C no iOS) que interage diretamente com o Google Play Services e as bibliotecas da Apple.
+O Expo Go é um aplicativo pré-compilado e **não** possui o código nativo de terceiros embutido.
 
-**Resultado:** O flow abre o browser, mas ao tentar redirecionar de volta ao app, falha silenciosamente ou retorna erro.
+**Resultado:** Se você tentar usar o Google Sign-In rodando no app Expo Go, ocorrerá um erro ou o código bloqueará a ação. O código atual do Meu Best detecta o Expo Go e exibe um alerta amigável.
 
-**Solução:** Um **development build** (EAS Build) que usa o scheme correto registrado no Google Cloud Console.
-
----
-
-## Pré-requisitos
-
-1. **Conta Expo** com acesso ao projeto (`expo login`)
-2. **EAS CLI** instalado: `npm install -g eas-cli`
-3. **Apple Developer Account** (para build iOS)
-4. **Configurações no Firebase Console e Google Cloud Console** (veja abaixo)
+**Solução:** É obrigatório gerar um **Development Build** (EAS Build) que compila o aplicativo junto com a biblioteca nativa e as credenciais (`google-services.json` / `GoogleService-Info.plist`).
 
 ---
 
-## 1. Configurar `app.config.js`
+## Pré-requisitos Obrigatórios
 
-Verifique que o arquivo tem:
+Antes de tentar compilar o app para desenvolvimento ou produção, garanta que você possui:
 
-```js
-// app.config.js
-export default ({ config }) => ({
-  ...config,
-  scheme: 'meubest',           // ← URI scheme do app
-  ios: {
-    bundleIdentifier: 'com.fillipelustman.meubest',
-    ...config.ios,
-  },
-  android: {
-    package: 'com.fillipelustman.meubest',
-    ...config.android,
-  },
-  plugins: [
-    // ... outros plugins
-  ],
-});
+1. **Conta Expo** configurada e `eas-cli` instalado (`npm install -g eas-cli`).
+2. **Google Cloud Console:** Client IDs nativos criados (iOS e Web).
+3. **Arquivos do Firebase Console na raiz da pasta `mobile`:**
+   - `google-services.json` (para Android)
+   - `GoogleService-Info.plist` (para iOS)
+   
+> **ATENÇÃO:** O arquivo `app.config.js` está preparado para ler esses arquivos. Se você for rodar um build nativo, deverá baixar esses arquivos do seu projeto no Firebase (seção Project Settings > General) e colocá-los na mesma pasta que o `app.config.js`. Depois, basta descomentar as linhas `googleServicesFile` correspondentes.
+
+---
+
+## 1. Variáveis de Ambiente (`.env`)
+
+Você precisa preencher seu arquivo `.env` (baseando-se no `.env.example`) com as variáveis exigidas.
+As variáveis essenciais para o Google Sign-In são:
+
+```env
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=seu-client-id-web
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=seu-client-id-ios
+EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN=true # Apenas para poder logar via email no Expo Go enquanto não gera a build nativa
 ```
 
----
-
-## 2. Configurar Google Cloud Console
-
-1. Acesse [console.cloud.google.com](https://console.cloud.google.com)
-2. Projeto: `gen-lang-client-0736917841`
-3. APIs & Services → Credentials → OAuth 2.0 Client IDs
-
-### Client ID Web (já existente)
-- Tipo: **Aplicativo da Web**
-- ID: `665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com`
-- **URIs de redirecionamento autorizados** deve incluir:
-  - `https://auth.expo.io/@fillipelustman/meubest` (para Expo proxy)
-  - `https://auth.expo.io/@<seu-username>/meubest`
-
-### Client ID iOS (já existente)
-- Tipo: **iOS**
-- ID: `665557596754-56d27ol8c022b0j7kdlnhte5c568nel0.apps.googleusercontent.com`
-- **Bundle ID:** `com.fillipelustman.meubest`
-- **URI scheme gerado:** `com.googleusercontent.apps.665557596754-56d27ol8c022b0j7kdlnhte5c568nel0`
+*Nota: O `googleWebClientId` é obrigatório mesmo no Android, pois é ele quem fornece o token aceito pelo Firebase.*
 
 ---
 
-## 3. Configurar Firebase Console
+## 2. Configurar Firebase e Google Cloud
 
-1. Firebase Console → projeto `gen-lang-client-0736917841`
-2. Authentication → Sign-in method → Google → Ativado ✅
-3. Authentication → Settings → Authorized domains:
-   - `meu.best` ✅
-   - `localhost` ✅
+### Android
+- Adicione o App Android no Firebase Console.
+- **Importante:** Cadastre o SHA-1 e o SHA-256 da sua chave de assinatura (debug/release) no Firebase. Sem isso, o pop-up nativo do Google fechará sozinho com erro `12501` ou `DEVELOPER_ERROR`.
+- Baixe o `google-services.json` e coloque na raiz.
+
+### iOS
+- Adicione o App iOS no Firebase Console com o `bundleIdentifier` correto.
+- No Google Cloud Console, verifique se o Client ID do iOS corresponde ao mesmo bundle.
+- Baixe o `GoogleService-Info.plist` e coloque na raiz.
 
 ---
 
-## 4. Gerar o Development Build (iOS Simulator)
+## 3. Gerar o Development Build via EAS
+
+Com os arquivos de credencial na pasta correta e as linhas descomentadas no `app.config.js`, siga com a compilação.
 
 ```bash
 # Login no EAS (se ainda não fez)
@@ -89,79 +69,38 @@ npx eas-cli login
 # Configurar o projeto EAS (primeira vez)
 npx eas-cli build:configure
 
-# Build para simulador iOS (mais rápido, sem Apple Developer)
+# Build para Android (APK ou AAB)
+npx eas-cli build --profile development --platform android
+
+# Build para simulador iOS (mais rápido, não exige conta Apple paga)
 npx eas-cli build --profile development --platform ios
-
-# OU build para dispositivo físico iOS
-npx eas-cli build --profile development --platform ios
-```
-
-### `eas.json` necessário:
-
-```json
-{
-  "cli": {
-    "version": ">= 14.0.0"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "simulator": true
-      }
-    },
-    "preview": {
-      "distribution": "internal"
-    },
-    "production": {}
-  },
-  "submit": {
-    "production": {}
-  }
-}
 ```
 
 ---
 
-## 5. Instalar e Executar o Dev Build
+## 4. Instalar e Executar o Dev Build
 
 ```bash
-# Após o build concluir, instale no simulador
-npx eas-cli build:run --platform ios
-
-# Execute o Metro com dev client
+# Executa o Metro Server (bundler) direcionando para o dev-client
 npx expo start --dev-client
 ```
+Abra o app compilado no emulador ou dispositivo físico. O botão "Continuar com Google" agora invocará as telas nativas do sistema em vez de um navegador web.
 
 ---
 
-## 6. Checklist antes de testar
+## Checklist de Troubleshooting
 
-- [ ] `scheme: 'meubest'` no `app.config.js`
-- [ ] `bundleIdentifier` correto no iOS
-- [ ] Client ID iOS no Google Cloud Console com bundle ID correto
-- [ ] Client ID iOS configurado no `.env` como `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
-- [ ] `EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN=false` no `.env` (remova o form de email)
-- [ ] Dev build instalado no simulador/dispositivo
-- [ ] Metro rodando com `--dev-client`
-
----
-
-## Troubleshooting
-
-| Erro | Causa | Solução |
+| Problema | Causa | Solução |
 |---|---|---|
-| `redirect_uri_mismatch` | URI scheme não cadastrado no Google | Adicionar nos authorized URIs |
-| `invalid_client` | Client ID errado | Verificar `.env` e Google Console |
-| App não abre após OAuth | Scheme não registrado no `app.config.js` | Adicionar `scheme: 'meubest'` |
-| Token inválido no Firebase | id_token ausente na resposta | Verificar scopes: `['openid', 'profile', 'email']` |
+| Alerta informando que precisa de Development Build | Tentando logar pelo Expo Go | Instale o app compilado via `eas build` |
+| Pop-up do Google fecha logo após abrir (Android) | SHA-1 ausente ou incorreto | Gere o SHA-1 do keystore usado pelo EAS e cadastre no Firebase |
+| `DEVELOPER_ERROR` / `12501` | Client ID ou SHA-1 inconsistentes | Verifique se o pacote/bundle no app.config bate com o Firebase |
+| Erro de compilação EAS | Falta do `.json` ou `.plist` | Baixe do Firebase e descomente no `app.config.js` |
 
 ---
 
 ## Referências
 
-- [Expo Google Auth Guide](https://docs.expo.dev/guides/google-authentication/)
-- [expo-auth-session Docs](https://docs.expo.dev/versions/latest/sdk/auth-session/)
-- [Firebase Auth - Sign in with Google](https://firebase.google.com/docs/auth/web/google-signin)
-- [EAS Build Docs](https://docs.expo.dev/build/introduction/)
+- [@react-native-google-signin/google-signin Github](https://github.com/react-native-google-signin/google-signin)
+- [Expo Development Builds](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Firebase Sign in with Google na Web e Native](https://firebase.google.com/docs/auth/web/google-signin)

@@ -31,7 +31,7 @@ module.exports = {
       backgroundColor: '#FDF8F5',
     },
     package: IS_DEV ? 'br.com.meubest.app.dev' : 'br.com.meubest.app',
-    // googleServicesFile: './google-services.json',  // Uncomment when file is added
+    googleServicesFile: './google-services.json',
     permissions: [
       'android.permission.CAMERA',
       'android.permission.RECORD_AUDIO',
@@ -61,6 +61,7 @@ module.exports = {
         photosPermission: 'O Meu Best precisa de acesso à sua galeria para atualizar sua foto de perfil.',
       },
     ],
+    '@react-native-google-signin/google-signin',
   ],
   extra: {
     firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -75,7 +76,7 @@ module.exports = {
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     eas: {
-      projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
+      projectId: '95e68ac1-41fb-4954-b763-057c7f63c9c3',
     },
   },
 };

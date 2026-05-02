@@ -29,12 +29,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft, MessageCircle, Heart, Globe } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
-import { GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import Constants from 'expo-constants';
-import { auth, db } from '@shared/services/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@shared/services/firebase';
+import { signInWithGoogle } from '@shared/services/googleAuth';
 import { appConfig } from '@constants/appConfig';
 import type { AuthStackParamList } from '@navigation/types';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
@@ -51,10 +48,6 @@ type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 const DEV_EMAIL_LOGIN_ENABLED =
   process.env.EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN === 'true';
 
-// ─── Detecta Expo Go ─────────────────────────────────────────────────────────
-function isExpoGo(): boolean {
-  return Constants.executionEnvironment === 'storeClient';
-}
 
 // ─── Conteúdo contextual por papel ──────────────────────────────────────────
 const ROLE_CONTENT = {
@@ -103,86 +96,21 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showDevEmailForm, setShowDevEmailForm] = useState(false);
 
-  // ── Google Auth Session ────────────────────────────────────────────
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: appConfig.googleWebClientId || undefined,
-    iosClientId: appConfig.googleIosClientId || undefined,
-    redirectUri: makeRedirectUri({ scheme: 'meubest' }),
-    scopes: ['openid', 'profile', 'email'],
-  });
-
-  // ── Processa resposta do Google ────────────────────────────────────
-  useEffect(() => {
-    if (!response) return;
-
-    if (response.type === 'success') {
-      const { id_token } = response.params;
-      if (id_token) {
-        handleFirebaseGoogleLogin(id_token);
-      } else {
-        setLoading(false);
-        Alert.alert('Erro', 'Token de autenticação inválido.');
-      }
-    } else if (response.type === 'error') {
-      setLoading(false);
-      Alert.alert('Erro', 'Não foi possível autenticar com o Google. Tente novamente.');
-    } else if (response.type === 'dismiss' || response.type === 'cancel') {
-      setLoading(false);
-    }
-  }, [response]);
-
-  // ── Firebase Google Login ──────────────────────────────────────────
-  const handleFirebaseGoogleLogin = async (idToken: string) => {
-    try {
-      setStatus('Autenticando...');
-      const credential = GoogleAuthProvider.credential(idToken);
-      const result = await signInWithCredential(auth, credential);
-
-      const userRef = doc(db, 'users', result.user.uid);
-      const snap = await getDoc(userRef);
-
-      if (!snap.exists()) {
-        setStatus('Criando perfil...');
-        const newProfile: Partial<UserProfile> = {
-          uid: result.user.uid,
-          name: result.user.displayName ?? 'Usuário',
-          email: result.user.email ?? '',
-          photoURL: result.user.photoURL ?? '',
-          role,
-          balance: 0,
-          totalEarnings: 0,
-          rating: 5.0,
-          isOnline: role === 'listener',
-          isProfileComplete: false,
-          showTutorial: true,
-          gratitudeCoins: 0,
-          points: 0,
-          level: 1,
-          currentStreak: 0,
-          badges: [],
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(userRef, newProfile);
-      }
-
-      setStatus('');
-    } catch (error: any) {
-      console.error('[LoginScreen] Google Firebase error:', error);
-      setStatus('');
-      setLoading(false);
-      Alert.alert('Erro ao entrar', error?.message ?? 'Não foi possível autenticar.');
-    }
-  };
-
   // ── Botão "Continuar com Google" ──────────────────────────────────
   const handleGooglePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    if (isExpoGo()) {
-      // Expo Go não suporta custom scheme OAuth
+    setLoading(true);
+    setStatus('Autenticando...');
+    
+    const result = await signInWithGoogle(role);
+
+    if (result.type === 'expoGoLimitation') {
+      setLoading(false);
+      setStatus('');
       Alert.alert(
-        'Google Sign-In',
-        'O login com Google requer um Development Build.\n\nPara testes, use e-mail e senha abaixo, ou gere um build de desenvolvimento com:\n\neas build --profile development',
+        'Google Sign-In Nativo',
+        'O login com Google requer um Development Build (EAS).\n\nPara testes rápidos, use e-mail e senha abaixo. Para testar o fluxo Google real, gere um build com:\n\neas build --profile development',
         [
           { text: 'Entendi', style: 'default' },
           {
@@ -194,10 +122,21 @@ export function LoginScreen() {
       return;
     }
 
-    // Dev Build — dispara o fluxo real
-    if (!request) return;
-    setLoading(true);
-    await promptAsync();
+    if (result.type === 'cancelled') {
+      setLoading(false);
+      setStatus('');
+      return;
+    }
+
+    if (result.type === 'error') {
+      setLoading(false);
+      setStatus('');
+      Alert.alert('Erro ao entrar', result.message);
+      return;
+    }
+
+    // Success - o AuthProvider cuidará da mudança de estado e navegação
+    setStatus('');
   };
 
   // ── Email/Senha (dev only) ─────────────────────────────────────────
