@@ -23,16 +23,19 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@shared/services/firebase';
+
 const TOPICS = [
-  'RELACIONAMENTO',
-  'CARREIRA',
-  'SAÚDE MENTAL',
-  'LUTO',
-  'ESPIRITUALIDADE',
-  'ESTUDOS',
-  'FAMÍLIA',
-  'ANSIEDADE',
-  'OUTRAS',
+  { id: 'relacionamento', label: 'RELACIONAMENTO' },
+  { id: 'carreira', label: 'CARREIRA' },
+  { id: 'saude', label: 'SAÚDE MENTAL' },
+  { id: 'luto', label: 'LUTO' },
+  { id: 'espiritualidade', label: 'ESPIRITUALIDADE' },
+  { id: 'estudos', label: 'ESTUDOS' },
+  { id: 'familia', label: 'FAMÍLIA' },
+  { id: 'ansiedade', label: 'ANSIEDADE' },
+  { id: 'outras', label: 'OUTRAS' },
 ];
 
 export function ProfileScreen() {
@@ -45,19 +48,31 @@ export function ProfileScreen() {
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [emailNotifications, setEmailNotifications] = useState(true);
 
-  // Inicializa dados do usuário
+  // Inicializa dados do usuário a partir do Firestore
   useEffect(() => {
-    if (profile?.name || user?.displayName) {
-      setDisplayName(profile?.name || user?.displayName || 'Amigo(a)');
+    if (profile) {
+      setDisplayName(profile.name || user?.displayName || 'Amigo(a)');
+      setPixKey(profile.bankDetails?.pix || '');
+      setBankName(profile.bankDetails?.bankName || '');
+      
+      // Normalização dos temas (aceita aliases antigos por segurança)
+      const topics = profile.interests || (profile as any).selectedTopics || (profile as any).temasInteresse || [];
+      setSelectedTopics(topics);
+      
+      if (typeof (profile as any).emailNotifications === 'boolean') {
+        setEmailNotifications((profile as any).emailNotifications);
+      }
+    } else if (user) {
+      setDisplayName(user.displayName || 'Amigo(a)');
     }
-  }, [profile?.name, user?.displayName]);
+  }, [profile, user]);
 
   const userEmail = profile?.email || user?.email || 'Nenhum e-mail cadastrado';
 
-  const toggleTopic = (topic: string) => {
+  const toggleTopic = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTopics((prev) =>
-      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
     );
   };
 
@@ -66,17 +81,39 @@ export function ProfileScreen() {
     setEmailNotifications((prev) => !prev);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!displayName.trim()) {
       Alert.alert('Atenção', 'O nome de exibição não pode estar vazio.');
       return;
     }
-    Alert.alert(
-      'Alterações Salvas',
-      'Alterações salvas localmente. A integração será conectada na próxima etapa.',
-      [{ text: 'OK' }]
-    );
+    
+    if (!user?.uid) {
+      Alert.alert('Erro', 'Usuário não autenticado.');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        name: displayName.trim(),
+        interests: selectedTopics,
+        bankDetails: {
+          pix: pixKey.trim(),
+          bankName: bankName.trim(),
+        },
+        emailNotifications,
+      }, { merge: true });
+
+      Alert.alert(
+        'Alterações Salvas',
+        'Suas informações foram sincronizadas com sucesso.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[ProfileScreen] Erro ao salvar:', error);
+      Alert.alert('Erro', 'Não foi possível salvar suas informações.');
+    }
   };
 
   const handleLogout = () => {
@@ -192,16 +229,16 @@ export function ProfileScreen() {
 
               <View style={styles.topicsGrid}>
                 {TOPICS.map((topic) => {
-                  const isSelected = selectedTopics.includes(topic);
+                  const isSelected = selectedTopics.includes(topic.id);
                   return (
                     <TouchableOpacity
-                      key={topic}
+                      key={topic.id}
                       activeOpacity={0.8}
-                      onPress={() => toggleTopic(topic)}
+                      onPress={() => toggleTopic(topic.id)}
                       style={[styles.topicPill, isSelected && styles.topicPillActive]}
                     >
                       <Text style={[styles.topicPillText, isSelected && styles.topicPillTextActive]}>
-                        {topic}
+                        {topic.label}
                       </Text>
                     </TouchableOpacity>
                   );

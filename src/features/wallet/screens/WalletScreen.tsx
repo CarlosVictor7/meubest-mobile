@@ -2,10 +2,10 @@
  * WalletScreen — Aba Carteira
  * Fiel ao PWA: card vermelho de saldo, 3 modais, transações, dados bancários
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, StatusBar,
-  TouchableOpacity, Modal, TextInput, Alert,
+  TouchableOpacity, Modal, TextInput, Alert, RefreshControl, ActivityIndicator
 } from 'react-native';
 import {
   CreditCard, X, Landmark, FileText, Wallet,
@@ -13,40 +13,68 @@ import {
 import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-
-// ─── Credit amount options ────────────────────────────────────────────────────
-const CREDIT_OPTIONS = [20, 50, 100];
+import { getWalletSummary, getWalletTransactions, requestWithdrawal, type WalletSummary, type Transaction } from '@shared/services/paymentService';
 
 export function WalletScreen() {
-  // State
-  const [creditsModal, setCreditsModal] = useState(false);
+  // Modals state
   const [withdrawModal, setWithdrawModal] = useState(false);
   const [statementModal, setStatementModal] = useState(false);
-  const [selectedAmount, setSelectedAmount] = useState(50);
+  const [bankModal, setBankModal] = useState(false);
+
+  // Form state
   const [pixKey, setPixKey] = useState('');
   const [bankName, setBankName] = useState('');
+  const [withdrawAmountStr, setWithdrawAmountStr] = useState('');
 
-  // Dados locais (sem integração real ainda)
-  const availableBalance = 0;
-  const withdrawableBalance = 0;
-  const transactions: any[] = [];
-  const canWithdraw = withdrawableBalance >= 100;
+  // Data state
+  const [summary, setSummary] = useState<WalletSummary | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
 
-  const handlePay = () => {
-    Alert.alert(
-      'Integração pendente',
-      'A integração de pagamento será conectada na próxima etapa.',
-      [{ text: 'OK' }]
-    );
+  const loadData = async () => {
+    try {
+      const [sum, trans] = await Promise.all([
+        getWalletSummary(),
+        getWalletTransactions()
+      ]);
+      setSummary(sum);
+      setTransactions(trans);
+    } catch (err: any) {
+      console.error(err);
+      // Evita alertar se a tela desmontou, mas num componente de aba pode alertar
+    }
   };
 
-  const handleWithdraw = () => {
+  useEffect(() => {
+    loadData().finally(() => setLoading(false));
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  const availableBalance = summary?.balanceRewards || 0;
+  const withdrawAmount = parseFloat(withdrawAmountStr.replace(',', '.')) || 0;
+  const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0;
+
+  const handleWithdraw = async () => {
     if (!canWithdraw) return;
-    Alert.alert(
-      'Integração pendente',
-      'A integração de saque será conectada na próxima etapa.',
-      [{ text: 'OK' }]
-    );
+    setWithdrawLoading(true);
+    try {
+      await requestWithdrawal({ amount: withdrawAmount, pixKey, bankName });
+      Alert.alert('Sucesso', 'Saque solicitado com sucesso!');
+      setWithdrawModal(false);
+      setWithdrawAmountStr('');
+      loadData();
+    } catch (err: any) {
+      Alert.alert('Erro', err.message || 'Erro ao pedir saque');
+    } finally {
+      setWithdrawLoading(false);
+    }
   };
 
   const handleSaveBank = () => {
@@ -56,33 +84,86 @@ export function WalletScreen() {
     }
     Alert.alert(
       'Dados salvos',
-      'Dados salvos localmente. A integração será conectada na próxima etapa.',
+      'Dados salvos localmente para o próximo saque.',
       [{ text: 'OK' }]
     );
+    setBankModal(false);
   };
+
+  const mapTransactionType = (type: string) => {
+    const map: Record<string, string> = {
+      tip_received: 'Gorjeta recebida',
+      tip_sent: 'Gorjeta enviada',
+      total_fee: 'Taxa total',
+      withdrawal: 'Saque',
+      refund: 'Reembolso'
+    };
+    return map[type] || type;
+  };
+
+  const mapTransactionStatus = (status: string) => {
+    const map: Record<string, string> = {
+      pending: 'Pendente',
+      paid: 'Pago',
+      failed: 'Falhou',
+      canceled: 'Cancelado'
+    };
+    return map[status] || status;
+  };
+
+  if (loading) {
+    return (
+      <View style={[s.root, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={s.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} bounces>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={s.scroll} 
+        bounces
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
         <TabHeader hideControls />
 
         {/* ── Card vermelho de saldo ─────────────────────────────── */}
         <View style={s.padded}>
           <View style={[s.balanceCard, shadows.primary]}>
             {/* Saldo disponível */}
-            <Text style={s.balLabel}>SALDO DISPONÍVEL</Text>
-            <Text style={s.balValue}>R$ {availableBalance}</Text>
-            <TouchableOpacity style={s.btnWhite} onPress={() => setCreditsModal(true)} activeOpacity={0.85}>
-              <Text style={s.btnWhiteText}>ADICIONAR CRÉDITOS</Text>
+            <Text style={s.balLabel}>GORJETAS RECEBIDAS</Text>
+            <Text style={s.balValue}>R$ {availableBalance.toFixed(2)}</Text>
+            
+            {/* Informações extras */}
+            <View style={s.extraInfoRow}>
+              <View style={s.extraInfoCol}>
+                <Text style={s.extraInfoLabel}>TOTAL RECEBIDO</Text>
+                <Text style={s.extraInfoVal}>R$ {(summary?.totalTipsReceived || 0).toFixed(2)}</Text>
+              </View>
+              <View style={s.extraInfoCol}>
+                <Text style={s.extraInfoLabel}>TOTAL SACADO</Text>
+                <Text style={s.extraInfoVal}>R$ {(summary?.totalWithdrawn || 0).toFixed(2)}</Text>
+              </View>
+            </View>
+            <View style={s.extraInfoRow}>
+               <View style={s.extraInfoCol}>
+                <Text style={s.extraInfoLabel}>SAQUES PENDENTES</Text>
+                <Text style={s.extraInfoVal}>R$ {(summary?.pendingWithdrawals || 0).toFixed(2)}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={s.btnWhite} onPress={() => setBankModal(true)} activeOpacity={0.85}>
+              <Text style={s.btnWhiteText}>DADOS DE RECEBIMENTO</Text>
             </TouchableOpacity>
 
             {/* Separador */}
             <View style={s.separator} />
 
-            {/* Saldo para resgate */}
-            <Text style={s.balLabel}>SALDO PARA RESGATE</Text>
-            <Text style={s.balValue}>R$ {withdrawableBalance}</Text>
             <TouchableOpacity style={s.btnBlack} onPress={() => setWithdrawModal(true)} activeOpacity={0.85}>
               <Text style={s.btnBlackText}>PEDIR SAQUE</Text>
             </TouchableOpacity>
@@ -105,24 +186,48 @@ export function WalletScreen() {
                 </View>
                 <Text style={s.emptyText}>{'NENHUMA TRANSAÇÃO\nRECENTE.'}</Text>
               </View>
-            ) : null}
+            ) : (
+              <View style={s.txList}>
+                {transactions.slice(0, 5).map((tx) => (
+                  <View key={tx.id} style={s.txItem}>
+                    <View style={s.txIcon}>
+                      <FileText size={20} color={colors.primary} />
+                    </View>
+                    <View style={s.txInfo}>
+                      <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
+                      <Text style={s.txStatus}>{mapTransactionStatus(tx.status)}</Text>
+                    </View>
+                    <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
+                      {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         </View>
 
-        {/* ── Dados Bancários ────────────────────────────────────── */}
-        <View style={s.padded}>
-          <View style={[s.whiteCard, shadows.sm]}>
-            <View style={s.bankHeader}>
-              <Text style={s.cardTitle}>{'DADOS\nBANCÁRIOS'}</Text>
-              <View style={s.bankIconWrap}>
-                <CreditCard size={22} color={colors.primary} strokeWidth={1.8} />
-              </View>
+        <View style={{ height: BOTTOM_NAV_SCROLL_PAD + 16 }} />
+      </ScrollView>
+
+      {/* ════════════════ MODAL: Dados de Recebimento ════════════════ */}
+      <Modal visible={bankModal} animationType="slide" transparent onRequestClose={() => setBankModal(false)}>
+        <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setBankModal(false)}>
+          <View style={m.sheet} onStartShouldSetResponder={() => true}>
+            <View style={m.handle} />
+            {/* Header */}
+            <View style={m.headerRow}>
+              <Text style={m.titleBig}>{'DADOS DE\nRECEBIMENTO'}</Text>
+              <TouchableOpacity onPress={() => setBankModal(false)} style={m.closeBtn}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
             </View>
+            
             <Text style={s.bankDesc}>
-              Cadastre sua chave PIX para receber as gorjetas das suas sessões como ouvinte.
+              Cadastre sua chave PIX para receber as gorjetas das suas sessões.
             </Text>
             {/* Chave PIX */}
-            <View style={s.fieldWrap}>
+            <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
               <Text style={s.fieldLabel}>CHAVE PIX</Text>
               <TextInput
                 style={s.input}
@@ -134,8 +239,8 @@ export function WalletScreen() {
               />
             </View>
             {/* Banco */}
-            <View style={s.fieldWrap}>
-              <Text style={s.fieldLabel}>BANCO</Text>
+            <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
+              <Text style={s.fieldLabel}>BANCO (Opcional)</Text>
               <TextInput
                 style={s.input}
                 placeholder="Nome do seu banco"
@@ -144,54 +249,8 @@ export function WalletScreen() {
                 onChangeText={setBankName}
               />
             </View>
-            <TouchableOpacity style={s.btnSave} onPress={handleSaveBank} activeOpacity={0.85}>
+            <TouchableOpacity style={[s.btnSave, { marginTop: spacing.xl }]} onPress={handleSaveBank} activeOpacity={0.85}>
               <Text style={s.btnSaveText}>SALVAR DADOS</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={{ height: BOTTOM_NAV_SCROLL_PAD + 16 }} />
-      </ScrollView>
-
-      {/* ════════════════ MODAL: Adicionar Créditos ════════════════ */}
-      <Modal visible={creditsModal} animationType="slide" transparent onRequestClose={() => setCreditsModal(false)}>
-        <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setCreditsModal(false)}>
-          <View style={m.sheet} onStartShouldSetResponder={() => true}>
-            <View style={m.handle} />
-            {/* Header */}
-            <View style={m.headerRow}>
-              <Text style={m.titleBig}>{'ADICIONAR\nCRÉDITOS'}</Text>
-              <TouchableOpacity onPress={() => setCreditsModal(false)} style={m.closeBtn}>
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            {/* Amount pills */}
-            <View style={m.pillRow}>
-              {CREDIT_OPTIONS.map((v) => (
-                <TouchableOpacity
-                  key={v}
-                  style={[m.pill, selectedAmount === v && m.pillActive]}
-                  onPress={() => setSelectedAmount(v)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[m.pillText, selectedAmount === v && m.pillTextActive]}>
-                    R$ {v}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {/* Pagamento seguro */}
-            <View style={m.secureCard}>
-              <Text style={m.secureLabel}>PAGAMENTO SEGURO</Text>
-              <View style={m.secureInner}>
-                <CreditCard size={32} color={colors.primary} strokeWidth={1.5} />
-                <Text style={m.secureName}>CARTÃO DE CRÉDITO</Text>
-              </View>
-              <Text style={m.stripeText}>PROCESSADO COM SEGURANÇA PELO STRIPE</Text>
-            </View>
-            {/* Botão pagar */}
-            <TouchableOpacity style={m.payBtn} onPress={handlePay} activeOpacity={0.85}>
-              <Text style={m.payBtnText}>PAGAR AGORA</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -212,37 +271,63 @@ export function WalletScreen() {
                 <X size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-            <Text style={m.wdTitle}>{'Resgate de\nRecompensas'}</Text>
+            <Text style={m.wdTitle}>{'Resgate de\nGorjetas'}</Text>
             <Text style={m.wdDesc}>
-              Você pode resgatar suas recompensas recebidas por acolhimentos diretamente para sua conta bancária.
+              Você pode resgatar suas gorjetas diretamente para sua conta bancária PIX.
             </Text>
+
             {/* Saldo card */}
             <View style={m.wdBalCard}>
               <View style={m.wdBalRow}>
                 <Text style={m.wdBalLabel}>SALDO DISPONÍVEL</Text>
-                <Text style={m.wdBalVal}>R$ {withdrawableBalance}</Text>
-              </View>
-              <View style={m.wdBalRow}>
-                <Text style={m.wdBalLabel}>MÍNIMO PARA SAQUE</Text>
-                <Text style={[m.wdBalVal, { color: colors.primary }]}>R$ 100</Text>
+                <Text style={m.wdBalVal}>R$ {availableBalance.toFixed(2)}</Text>
               </View>
             </View>
-            {/* Warning */}
-            {!canWithdraw && (
+
+            {/* Input Valor */}
+            <View style={[s.fieldWrap, { marginBottom: spacing.md }]}>
+              <Text style={s.fieldLabel}>VALOR DO SAQUE</Text>
+              <TextInput
+                style={s.input}
+                placeholder="0,00"
+                placeholderTextColor={colors.textMutedValue}
+                value={withdrawAmountStr}
+                onChangeText={setWithdrawAmountStr}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            {/* Warning missing PIX */}
+            {pixKey.trim().length === 0 && (
               <View style={m.wdWarn}>
                 <Text style={m.wdWarnIcon}>⚠️</Text>
                 <Text style={m.wdWarnText}>
-                  Você ainda não atingiu o valor mínimo de R$ 100 para realizar o saque.
+                  Você precisa configurar uma chave PIX antes de sacar.
                 </Text>
               </View>
             )}
+
+            {/* Warning amount */}
+            {withdrawAmountStr.length > 0 && withdrawAmount > availableBalance && (
+              <View style={m.wdWarn}>
+                <Text style={m.wdWarnIcon}>⚠️</Text>
+                <Text style={m.wdWarnText}>
+                  Saldo insuficiente para este valor.
+                </Text>
+              </View>
+            )}
+
             <TouchableOpacity
-              style={[m.wdBtn, !canWithdraw && m.wdBtnDisabled]}
+              style={[m.wdBtn, (!canWithdraw || withdrawLoading) && m.wdBtnDisabled]}
               onPress={handleWithdraw}
               activeOpacity={canWithdraw ? 0.85 : 1}
-              disabled={!canWithdraw}
+              disabled={!canWithdraw || withdrawLoading}
             >
-              <Text style={[m.wdBtnText, !canWithdraw && m.wdBtnTextDisabled]}>CONTINUAR PARA SAQUE</Text>
+              {withdrawLoading ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={[m.wdBtnText, !canWithdraw && m.wdBtnTextDisabled]}>SOLICITAR SAQUE</Text>
+              )}
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -251,7 +336,7 @@ export function WalletScreen() {
       {/* ════════════════ MODAL: Extrato Completo ═════════════════ */}
       <Modal visible={statementModal} animationType="slide" transparent onRequestClose={() => setStatementModal(false)}>
         <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setStatementModal(false)}>
-          <View style={[m.sheet, { minHeight: 340 }]} onStartShouldSetResponder={() => true}>
+          <View style={[m.sheet, { minHeight: '80%' }]} onStartShouldSetResponder={() => true}>
             <View style={m.handle} />
             <View style={m.headerRow}>
               <Text style={m.titleBig}>{'EXTRATO\nCOMPLETO'}</Text>
@@ -259,11 +344,31 @@ export function WalletScreen() {
                 <X size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-            {transactions.length === 0 ? (
-              <View style={s.emptyWrap}>
-                <Text style={s.emptyText}>{'NENHUMA TRANSAÇÃO\nENCONTRADA.'}</Text>
-              </View>
-            ) : null}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {transactions.length === 0 ? (
+                <View style={s.emptyWrap}>
+                  <Text style={s.emptyText}>{'NENHUMA TRANSAÇÃO\nENCONTRADA.'}</Text>
+                </View>
+              ) : (
+                <View style={s.txList}>
+                  {transactions.map((tx) => (
+                    <View key={tx.id} style={s.txItem}>
+                      <View style={s.txIcon}>
+                        <FileText size={20} color={colors.primary} />
+                      </View>
+                      <View style={s.txInfo}>
+                        <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
+                        <Text style={s.txStatus}>{mapTransactionStatus(tx.status)}</Text>
+                      </View>
+                      <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
+                        {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              <View style={{ height: 40 }} />
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -298,6 +403,24 @@ const s = StyleSheet.create({
     lineHeight: 46,
     marginBottom: spacing.xs,
   },
+  extraInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  extraInfoCol: {
+    flex: 1,
+  },
+  extraInfoLabel: {
+    fontSize: typography.size.xs - 2,
+    fontWeight: typography.weight.bold,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: typography.tracking.wide,
+  },
+  extraInfoVal: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    color: colors.textInverted,
+  },
   separator: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -308,6 +431,7 @@ const s = StyleSheet.create({
     borderRadius: borderRadius.full,
     paddingVertical: spacing.md,
     alignItems: 'center',
+    marginTop: spacing.xs,
   },
   btnWhiteText: {
     fontSize: typography.size.sm,
@@ -341,7 +465,7 @@ const s = StyleSheet.create({
     letterSpacing: typography.tracking.wider,
   },
 
-  // Cards brancos (transações + dados bancários)
+  // Cards brancos
   whiteCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
@@ -382,20 +506,47 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // Dados bancários
-  bankHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  // Tx List
+  txList: {
+    gap: spacing.md,
   },
-  bankIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
+  txItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  txIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  txInfo: {
+    flex: 1,
+  },
+  txType: {
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+  },
+  txStatus: {
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+  },
+  txAmount: {
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.black,
+  },
+  txAmountPos: {
+    color: colors.success,
+  },
+  txAmountNeg: {
+    color: colors.text,
+  },
+
+  // Inputs e labels (do modal bancário e saque)
   bankDesc: {
     fontSize: typography.size.base,
     color: colors.textMutedValue,
@@ -473,79 +624,6 @@ const m = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: colors.background,
     justifyContent: 'center', alignItems: 'center',
-  },
-
-  // Adicionar créditos
-  pillRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  pill: {
-    flex: 1,
-    borderRadius: borderRadius.full,
-    borderWidth: 2,
-    borderColor: colors.primaryLight,
-    paddingVertical: spacing.sm + 2,
-    alignItems: 'center',
-  },
-  pillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  pillText: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-  },
-  pillTextActive: { color: colors.textInverted },
-  secureCard: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  secureLabel: {
-    fontSize: typography.size.xs,
-    fontWeight: typography.weight.black,
-    color: colors.textMutedValue,
-    letterSpacing: typography.tracking.wider,
-  },
-  secureInner: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-    width: '70%',
-  },
-  secureName: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-    letterSpacing: typography.tracking.wide,
-  },
-  stripeText: {
-    fontSize: typography.size.xs,
-    fontWeight: typography.weight.bold,
-    color: colors.primary,
-    letterSpacing: typography.tracking.wide,
-    textAlign: 'center',
-  },
-  payBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.full,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
-    ...shadows.primary,
-  },
-  payBtnText: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.black,
-    color: colors.textInverted,
-    letterSpacing: typography.tracking.wider,
   },
 
   // Pedir saque
