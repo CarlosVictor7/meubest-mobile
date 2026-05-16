@@ -76,7 +76,7 @@ async function apiRequest<T>(
   const baseUrl = appConfig.apiUrl.replace(/\/$/, '');
 
   // Em dev com ngrok, bypassa a tela de aviso do browser (retornaria HTML em vez de JSON)
-  const ngrokHeader = __DEV__ && baseUrl.includes('ngrok')
+  const ngrokHeader: Record<string, string> = __DEV__ && baseUrl.includes('ngrok')
     ? { 'ngrok-skip-browser-warning': 'true' }
     : {};
 
@@ -86,7 +86,7 @@ async function apiRequest<T>(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
       ...ngrokHeader,
-      ...options.headers,
+      ...(options.headers as Record<string, string> | undefined),
     },
   });
 
