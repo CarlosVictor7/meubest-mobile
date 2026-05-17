@@ -14,7 +14,11 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary, getWalletTransactions, requestWithdrawal, type WalletSummary, type Transaction } from '@shared/services/paymentService';
-import { detectPixKeyType } from '@shared/utils/pix';
+import { detectPixKeyType, maskPixKey } from '@shared/utils/pix';
+import { formatTransactionDate, getTransactionDate } from '@shared/utils/date';
+import { useAuth } from '@features/auth/hooks/useAuth';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@shared/services/firebase';
 
 export function WalletScreen() {
   // Modals state
@@ -33,6 +37,17 @@ export function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const { user, profile } = useAuth();
+  const hasBankDetails = Boolean(profile?.bankDetails?.pix);
+  const [isEditingBankDetails, setIsEditingBankDetails] = useState(false);
+
+  // Initialize pixKey and bankName from profile when not editing
+  useEffect(() => {
+    if (!isEditingBankDetails && profile?.bankDetails) {
+      setPixKey(profile.bankDetails.pix || '');
+      setBankName(profile.bankDetails.bankName || '');
+    }
+  }, [isEditingBankDetails, profile?.bankDetails]);
 
   const loadData = async () => {
     try {
@@ -62,8 +77,44 @@ export function WalletScreen() {
   const withdrawAmount = parseFloat(withdrawAmountStr.replace(',', '.')) || 0;
   const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0;
 
-  const validTransactions = transactions.filter(tx => !['failed', 'cancelled'].includes(tx.status));
-  const pendingWithdrawal = transactions.find(tx => tx.type === 'withdrawal' && ['requested', 'processing', 'pending'].includes(tx.status));
+  const validTransactions = (transactions || []).filter(tx => {
+    if (!tx) return false;
+    if (['failed', 'cancelled', 'rejected', 'refunded', 'error'].includes(tx.status)) {
+      return false;
+    }
+    if (tx.type === 'withdrawal' && (tx as any).metadata?.provider === 'manual' && ['requested', 'processing', 'pending'].includes(tx.status)) {
+      return false;
+    }
+    return true;
+  });
+
+  const validPendingWithdrawal = (transactions || []).find(tx => {
+    const isPending = tx.type === 'withdrawal' && ['requested', 'processing', 'pending'].includes(tx.status);
+    if (!isPending) return false;
+    
+    const txDateRaw = getTransactionDate(tx);
+    let txDate = new Date();
+    if (txDateRaw) {
+      if (txDateRaw instanceof Date) {
+        txDate = txDateRaw;
+      } else if (typeof txDateRaw === 'object') {
+        if ('seconds' in txDateRaw) txDate = new Date(txDateRaw.seconds * 1000);
+        else if ('_seconds' in txDateRaw) txDate = new Date(txDateRaw._seconds * 1000);
+        else if ('toDate' in txDateRaw && typeof (txDateRaw as any).toDate === 'function') txDate = (txDateRaw as any).toDate();
+      } else if (typeof txDateRaw === 'string' || typeof txDateRaw === 'number') {
+        const d = new Date(txDateRaw);
+        if (!isNaN(d.getTime())) txDate = d;
+      }
+    }
+    
+    if (isNaN(txDate.getTime())) return false;
+    const diffDays = (new Date().getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays > 10) return false;
+
+    if ((tx as any).metadata?.provider === 'manual') return false;
+
+    return true;
+  });
 
   const handleWithdraw = async () => {
     if (!canWithdraw) return;
@@ -81,17 +132,26 @@ export function WalletScreen() {
     }
   };
 
-  const handleSaveBank = () => {
+  const handleSaveBank = async () => {
     if (!pixKey.trim() || !bankName.trim()) {
       Alert.alert('Campos obrigatórios', 'Preencha a chave PIX e o banco.');
       return;
     }
-    Alert.alert(
-      'Dados salvos',
-      'Dados salvos localmente para o próximo saque.',
-      [{ text: 'OK' }]
-    );
-    setBankModal(false);
+    if (!user?.uid) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        bankDetails: {
+          pix: pixKey.trim(),
+          bankName: bankName.trim(),
+        }
+      }, { merge: true });
+      Alert.alert('Sucesso', 'Dados salvos com sucesso.');
+      setIsEditingBankDetails(false);
+      setBankModal(false);
+    } catch (err: any) {
+      Alert.alert('Erro', 'Não foi possível salvar os dados bancários.');
+    }
   };
 
   const mapTransactionType = (type: string) => {
@@ -168,8 +228,8 @@ export function WalletScreen() {
             {/* Separador */}
             <View style={s.separator} />
 
-            <TouchableOpacity style={[s.btnBlack, pendingWithdrawal && { opacity: 0.5 }]} onPress={() => { if (!pendingWithdrawal) setWithdrawModal(true); }} activeOpacity={0.85}>
-              <Text style={s.btnBlackText}>{pendingWithdrawal ? 'SAQUE EM ANDAMENTO' : 'PEDIR SAQUE'}</Text>
+            <TouchableOpacity style={[s.btnBlack, validPendingWithdrawal && { opacity: 0.5 }]} onPress={() => { if (!validPendingWithdrawal) setWithdrawModal(true); }} activeOpacity={0.85}>
+              <Text style={s.btnBlackText}>{validPendingWithdrawal ? 'SAQUE EM ANDAMENTO' : 'PEDIR SAQUE'}</Text>
             </TouchableOpacity>
 
             {/* Ver extrato */}
@@ -180,27 +240,61 @@ export function WalletScreen() {
         </View>
 
         {/* ── Saque Pendente ─────────────────────────────────────── */}
-        {pendingWithdrawal && (
-          <View style={s.padded}>
-            <View style={[s.pendingCard, shadows.sm]}>
-              <View style={s.pendingHeaderRow}>
-                <View style={s.pendingIconWrap}>
-                  <Landmark size={20} color={colors.primary} />
+        {validPendingWithdrawal && (() => {
+          const txDateRaw = getTransactionDate(validPendingWithdrawal);
+          let requestDate = new Date();
+          if (txDateRaw) {
+            if (txDateRaw instanceof Date) {
+              requestDate = txDateRaw;
+            } else if (typeof txDateRaw === 'object') {
+              if ('seconds' in txDateRaw) requestDate = new Date(txDateRaw.seconds * 1000);
+              else if ('_seconds' in txDateRaw) requestDate = new Date(txDateRaw._seconds * 1000);
+              else if ('toDate' in txDateRaw && typeof (txDateRaw as any).toDate === 'function') requestDate = (txDateRaw as any).toDate();
+            } else if (typeof txDateRaw === 'string' || typeof txDateRaw === 'number') {
+              const d = new Date(txDateRaw);
+              if (!isNaN(d.getTime())) requestDate = d;
+            }
+          }
+          const limitDate = new Date(requestDate);
+          limitDate.setDate(limitDate.getDate() + 10);
+          
+          const pixKeyUsed = validPendingWithdrawal.metadata?.pixKey || profile?.bankDetails?.pix || '';
+          const bankNameUsed = validPendingWithdrawal.metadata?.bankName || profile?.bankDetails?.bankName || '-';
+          
+          return (
+            <View style={s.padded}>
+              <View style={[s.pendingCard, shadows.sm]}>
+                <View style={s.pendingHeaderRow}>
+                  <View style={s.pendingIconWrap}>
+                    <Landmark size={20} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.pendingTitle}>SAQUE EM PROCESSAMENTO</Text>
+                    <Text style={s.pendingDesc}>Previsão de até 10 dias.</Text>
+                  </View>
+                  <Text style={s.pendingAmount}>R$ {Math.abs(validPendingWithdrawal.amount).toFixed(2)}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.pendingTitle}>SAQUE EM PROCESSAMENTO</Text>
-                  <Text style={s.pendingDesc}>Previsão de até 10 dias.</Text>
+                <View style={s.pendingDivider} />
+                <View style={s.pendingFooterRow}>
+                  <Text style={s.pendingLabel}>Data da solicitação</Text>
+                  <Text style={s.pendingVal}>{formatTransactionDate(txDateRaw)}</Text>
                 </View>
-                <Text style={s.pendingAmount}>R$ {Math.abs(pendingWithdrawal.amount).toFixed(2)}</Text>
-              </View>
-              <View style={s.pendingDivider} />
-              <View style={s.pendingFooterRow}>
-                <Text style={s.pendingLabel}>Data da solicitação</Text>
-                <Text style={s.pendingVal}>{new Date(pendingWithdrawal.createdAt as any).toLocaleDateString('pt-BR')}</Text>
+                <View style={[s.pendingFooterRow, { marginTop: 4 }]}>
+                  <Text style={s.pendingLabel}>Prazo limite</Text>
+                  <Text style={s.pendingVal}>{limitDate.toLocaleDateString('pt-BR')}</Text>
+                </View>
+                <View style={[s.pendingFooterRow, { marginTop: 4 }]}>
+                  <Text style={s.pendingLabel}>Chave PIX</Text>
+                  <Text style={s.pendingVal}>{maskPixKey(pixKeyUsed, detectPixKeyType(pixKeyUsed))}</Text>
+                </View>
+                <View style={[s.pendingFooterRow, { marginTop: 4 }]}>
+                  <Text style={s.pendingLabel}>Banco</Text>
+                  <Text style={s.pendingVal}>{bankNameUsed}</Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* ── Transações Recentes ────────────────────────────────── */}
         <View style={s.padded}>
@@ -215,20 +309,27 @@ export function WalletScreen() {
               </View>
             ) : (
               <View style={s.txList}>
-                {validTransactions.slice(0, 5).map((tx) => (
-                  <View key={tx.id} style={s.txItem}>
-                    <View style={s.txIcon}>
-                      <FileText size={20} color={colors.primary} />
+                {validTransactions.slice(0, 5).map((tx) => {
+                  const dateStr = formatTransactionDate(getTransactionDate(tx));
+                  const payerName = tx.metadata?.fromUserName || tx.metadata?.fromUserEmail;
+                  return (
+                    <View key={tx.id} style={s.txItem}>
+                      <View style={s.txIcon}>
+                        <FileText size={20} color={colors.primary} />
+                      </View>
+                      <View style={s.txInfo}>
+                        <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
+                        <Text style={s.txStatus}>
+                          {dateStr}
+                          {tx.type === 'tip_received' && payerName ? `\nDe: ${payerName}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
+                        {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
+                      </Text>
                     </View>
-                    <View style={s.txInfo}>
-                      <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
-                      <Text style={s.txStatus}>{mapTransactionStatus(tx.status)}</Text>
-                    </View>
-                    <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
-                      {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
-                    </Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             )}
           </View>
@@ -383,20 +484,63 @@ export function WalletScreen() {
                 </View>
               ) : (
                 <View style={s.txList}>
-                  {validTransactions.map((tx) => (
-                    <View key={tx.id} style={s.txItem}>
-                      <View style={s.txIcon}>
-                        <FileText size={20} color={colors.primary} />
+                  {validTransactions.map((tx) => {
+                    const dateStr = formatTransactionDate(getTransactionDate(tx));
+                    const payerName = tx.metadata?.fromUserName || tx.metadata?.fromUserEmail;
+                    const message = tx.metadata?.message;
+                    const bank = tx.metadata?.bankName;
+                    const pix = tx.metadata?.pixKey;
+                    const shortId = tx.id ? `ID: ${tx.id.substring(0, 8).toUpperCase()}` : '';
+                    
+                    return (
+                      <View key={tx.id} style={[s.txItem, { flexDirection: 'column', alignItems: 'stretch', gap: 6, paddingVertical: 12 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                            <View style={s.txIcon}>
+                              <FileText size={20} color={colors.primary} />
+                            </View>
+                            <View>
+                              <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
+                              <Text style={s.txStatus}>{dateStr}</Text>
+                            </View>
+                          </View>
+                          <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
+                            {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
+                          </Text>
+                        </View>
+                        
+                        {/* Detalhes específicos */}
+                        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(26,26,26,0.06)', paddingTop: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flex: 1 }}>
+                            {tx.type === 'tip_received' && (
+                              <Text style={{ fontSize: 10, color: colors.textMutedValue, fontWeight: 'bold' }}>
+                                De: {payerName || 'Usuário Apoiador'}
+                              </Text>
+                            )}
+                            {tx.type === 'withdrawal' && (
+                              <Text style={{ fontSize: 10, color: colors.textMutedValue, fontWeight: 'bold' }}>
+                                Banco: {bank || '-'} | Pix: {pix ? maskPixKey(pix, detectPixKeyType(pix)) : '-'}
+                              </Text>
+                            )}
+                            {tx.metadata?.provider && (
+                              <Text style={{ fontSize: 9, color: colors.textMutedValue, opacity: 0.8, textTransform: 'uppercase', fontWeight: 'bold', marginTop: 2 }}>
+                                Canal: {tx.metadata.provider}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={{ fontSize: 9, color: 'rgba(26,26,26,0.25)', fontWeight: 'bold' }}>{shortId}</Text>
+                        </View>
+                        
+                        {tx.type === 'tip_received' && message ? (
+                          <View style={{ backgroundColor: 'rgba(26,26,26,0.02)', padding: 6, borderRadius: borderRadius.md, borderWidth: 1, borderColor: 'rgba(26,26,26,0.04)', marginTop: 2 }}>
+                            <Text style={{ fontSize: 11, fontStyle: 'italic', color: 'rgba(26,26,26,0.7)' }}>
+                              "{message}"
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
-                      <View style={s.txInfo}>
-                        <Text style={s.txType}>{mapTransactionType(tx.type)}</Text>
-                        <Text style={s.txStatus}>{mapTransactionStatus(tx.status)}</Text>
-                      </View>
-                      <Text style={[s.txAmount, tx.amount > 0 ? s.txAmountPos : s.txAmountNeg]}>
-                        {tx.amount > 0 ? '+' : ''}R$ {Math.abs(tx.amount).toFixed(2)}
-                      </Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
               <View style={{ height: 40 }} />

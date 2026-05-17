@@ -35,6 +35,7 @@ export interface Transaction {
   tipId?: string;
   withdrawalId?: string;
   createdAt: unknown;
+  metadata?: any;
 }
 
 export interface CreateTipPixParams {

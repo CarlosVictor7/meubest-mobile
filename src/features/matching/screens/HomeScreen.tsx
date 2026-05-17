@@ -48,6 +48,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { getWalletSummary } from '@shared/services/paymentService';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -89,10 +90,32 @@ export function HomeScreen() {
   const balance = profile?.balance ?? 0;
   const referralCode = profile?.referralCode ?? '—';
 
+  const [walletSummary, setWalletSummary] = useState<any>(null);
+
   // Sincroniza isOnline com o profile
   useEffect(() => {
     setIsOnline(profile?.isOnline ?? false);
   }, [profile?.isOnline]);
+
+  // Carrega walletSummary quando focado e no mount
+  useEffect(() => {
+    let active = true;
+    const fetchSummary = async () => {
+      try {
+        const res = await getWalletSummary();
+        if (active) setWalletSummary(res);
+      } catch (err) {
+        console.error('Error fetching summary on Home:', err);
+      }
+    };
+    fetchSummary();
+    
+    const focusUnsub = navigation.addListener('focus', fetchSummary);
+    return () => {
+      active = false;
+      focusUnsub();
+    };
+  }, [navigation]);
 
   // Escuta sessões do usuário
   useEffect(() => {
@@ -210,8 +233,8 @@ export function HomeScreen() {
             />
             <StatsCard
               label={isListener ? 'Gorjeta Atual' : 'Saldo'}
-              value={`R$${balance}`}
-              subValue={isListener ? `TOTAL ACUMULADO: R$${profile?.totalEarnings ?? 0}` : undefined}
+              value={`R$${(walletSummary?.balanceRewards ?? 0).toFixed(2)}`}
+              subValue={isListener ? `TOTAL ACUMULADO: R$${(walletSummary?.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
               icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
             />
           </View>
