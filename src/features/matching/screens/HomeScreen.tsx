@@ -233,8 +233,8 @@ export function HomeScreen() {
             />
             <StatsCard
               label={isListener ? 'Gorjeta Atual' : 'Saldo'}
-              value={`R$${(walletSummary?.balanceRewards ?? 0).toFixed(2)}`}
-              subValue={isListener ? `TOTAL ACUMULADO: R$${(walletSummary?.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
+              value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
+              subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
               icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
             />
           </View>
