@@ -14,6 +14,7 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary, getWalletTransactions, requestWithdrawal, type WalletSummary, type Transaction } from '@shared/services/paymentService';
+import { detectPixKeyType } from '@shared/utils/pix';
 
 export function WalletScreen() {
   // Modals state
@@ -60,6 +61,9 @@ export function WalletScreen() {
   const availableBalance = summary?.balanceRewards || 0;
   const withdrawAmount = parseFloat(withdrawAmountStr.replace(',', '.')) || 0;
   const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0;
+
+  const validTransactions = transactions.filter(tx => !['failed', 'cancelled'].includes(tx.status));
+  const pendingWithdrawal = transactions.find(tx => tx.type === 'withdrawal' && ['requested', 'processing', 'pending'].includes(tx.status));
 
   const handleWithdraw = async () => {
     if (!canWithdraw) return;
@@ -164,8 +168,8 @@ export function WalletScreen() {
             {/* Separador */}
             <View style={s.separator} />
 
-            <TouchableOpacity style={s.btnBlack} onPress={() => setWithdrawModal(true)} activeOpacity={0.85}>
-              <Text style={s.btnBlackText}>PEDIR SAQUE</Text>
+            <TouchableOpacity style={[s.btnBlack, pendingWithdrawal && { opacity: 0.5 }]} onPress={() => { if (!pendingWithdrawal) setWithdrawModal(true); }} activeOpacity={0.85}>
+              <Text style={s.btnBlackText}>{pendingWithdrawal ? 'SAQUE EM ANDAMENTO' : 'PEDIR SAQUE'}</Text>
             </TouchableOpacity>
 
             {/* Ver extrato */}
@@ -175,11 +179,34 @@ export function WalletScreen() {
           </View>
         </View>
 
+        {/* ── Saque Pendente ─────────────────────────────────────── */}
+        {pendingWithdrawal && (
+          <View style={s.padded}>
+            <View style={[s.pendingCard, shadows.sm]}>
+              <View style={s.pendingHeaderRow}>
+                <View style={s.pendingIconWrap}>
+                  <Landmark size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.pendingTitle}>SAQUE EM PROCESSAMENTO</Text>
+                  <Text style={s.pendingDesc}>Previsão de até 10 dias.</Text>
+                </View>
+                <Text style={s.pendingAmount}>R$ {Math.abs(pendingWithdrawal.amount).toFixed(2)}</Text>
+              </View>
+              <View style={s.pendingDivider} />
+              <View style={s.pendingFooterRow}>
+                <Text style={s.pendingLabel}>Data da solicitação</Text>
+                <Text style={s.pendingVal}>{new Date(pendingWithdrawal.createdAt as any).toLocaleDateString('pt-BR')}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* ── Transações Recentes ────────────────────────────────── */}
         <View style={s.padded}>
           <View style={[s.whiteCard, shadows.sm]}>
             <Text style={s.cardTitle}>{'TRANSAÇÕES\nRECENTES'}</Text>
-            {transactions.length === 0 ? (
+            {validTransactions.length === 0 ? (
               <View style={s.emptyWrap}>
                 <View style={s.emptyCircle}>
                   <CreditCard size={28} color={`${colors.primary}40`} strokeWidth={1.5} />
@@ -188,7 +215,7 @@ export function WalletScreen() {
               </View>
             ) : (
               <View style={s.txList}>
-                {transactions.slice(0, 5).map((tx) => (
+                {validTransactions.slice(0, 5).map((tx) => (
                   <View key={tx.id} style={s.txItem}>
                     <View style={s.txIcon}>
                       <FileText size={20} color={colors.primary} />
@@ -237,6 +264,11 @@ export function WalletScreen() {
                 onChangeText={setPixKey}
                 autoCapitalize="none"
               />
+              {pixKey.trim().length > 0 && (
+                <View style={s.pixTypeBadge}>
+                  <Text style={s.pixTypeText}>Tipo identificado: {detectPixKeyType(pixKey)}</Text>
+                </View>
+              )}
             </View>
             {/* Banco */}
             <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
@@ -345,13 +377,13 @@ export function WalletScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {transactions.length === 0 ? (
+              {validTransactions.length === 0 ? (
                 <View style={s.emptyWrap}>
                   <Text style={s.emptyText}>{'NENHUMA TRANSAÇÃO\nENCONTRADA.'}</Text>
                 </View>
               ) : (
                 <View style={s.txList}>
-                  {transactions.map((tx) => (
+                  {validTransactions.map((tx) => (
                     <View key={tx.id} style={s.txItem}>
                       <View style={s.txIcon}>
                         <FileText size={20} color={colors.primary} />
@@ -463,6 +495,75 @@ const s = StyleSheet.create({
     fontWeight: typography.weight.black,
     color: colors.textInverted,
     letterSpacing: typography.tracking.wider,
+  },
+
+  // Pending Card
+  pendingCard: {
+    backgroundColor: '#FFF0F0',
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: '#FFD6D9',
+    padding: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  pendingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pendingIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(225,48,29,0.1)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  pendingTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: typography.tracking.wider,
+  },
+  pendingDesc: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    opacity: 0.7,
+    fontWeight: typography.weight.bold,
+  },
+  pendingAmount: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+  },
+  pendingDivider: {
+    height: 1, backgroundColor: 'rgba(225,48,29,0.1)', marginVertical: spacing.sm,
+  },
+  pendingFooterRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+  },
+  pendingLabel: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    opacity: 0.7,
+    fontWeight: typography.weight.bold,
+  },
+  pendingVal: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
+  },
+
+  // Pix Badge
+  pixTypeBadge: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+  },
+  pixTypeText: {
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.bold,
   },
 
   // Cards brancos
