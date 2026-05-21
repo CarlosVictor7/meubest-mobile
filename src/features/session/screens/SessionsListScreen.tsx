@@ -27,6 +27,7 @@ import {
 import { Calendar, Clock, Video } from 'lucide-react-native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
+import { useNavigation } from '@react-navigation/native';
 import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
@@ -145,6 +146,7 @@ function EmptyState() {
 
 // ─── SessionCard ─────────────────────────────────────────────────────────────
 function SessionCard({ session }: { session: any }) {
+  const navigation = useNavigation<any>();
   const status      = session.status ?? 'pending';
   const statusLabel = STATUS_LABEL[status] ?? status.toUpperCase();
   const statusColor = STATUS_COLOR[status] ?? '#9CA3AF';
@@ -168,8 +170,19 @@ function SessionCard({ session }: { session: any }) {
 
   const category = (session.category ?? session.theme ?? '—').toUpperCase();
 
+  const handlePress = () => {
+    if (status === 'active' || status === 'pending') {
+      navigation.navigate('Session', { sessionId: session.id });
+    }
+  };
+
   return (
-    <View style={card.container}>
+    <TouchableOpacity 
+      style={card.container} 
+      onPress={handlePress}
+      activeOpacity={status === 'active' || status === 'pending' ? 0.7 : 1}
+      disabled={status !== 'active' && status !== 'pending'}
+    >
       <View style={card.top}>
         <View style={card.iconWrap}>
           <Video size={18} color={colors.primary} strokeWidth={2} />
@@ -190,16 +203,22 @@ function SessionCard({ session }: { session: any }) {
       </View>
 
       <View style={card.footer}>
-        <TouchableOpacity activeOpacity={0.7}>
-          <Text style={card.detalhes}>DETALHES</Text>
-        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          {(status === 'active' || status === 'pending') ? (
+            <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
+              <Text style={[card.detalhes, { color: colors.primary, fontWeight: '900' }]}>ENTRAR NA SALA</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={[card.detalhes, { color: colors.textMutedValue, textDecorationLine: 'none' }]}>CONCLUÍDA</Text>
+          )}
+        </View>
         <View style={[card.badge, { backgroundColor: `${statusColor}18` }]}>
           <Text style={[card.badgeText, { color: statusColor }]}>
             {statusLabel}
           </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

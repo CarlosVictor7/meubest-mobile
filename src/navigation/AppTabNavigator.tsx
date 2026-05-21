@@ -14,11 +14,15 @@ import { Alert, Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView } fr
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Zap, X } from 'lucide-react-native';
 import { BottomNav, type BottomNavTab } from '@shared/components';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
 import type { AppTabParamList } from './types';
 import { SESSION_THEMES } from '@constants/config';
+import { useAuth } from '@features/auth/hooks/useAuth';
+import { useIncomingCall } from '@features/session/hooks/useIncomingCall';
+import { IncomingCallModal } from '@features/session/components/IncomingCallModal';
 
 // Tab stacks
 import { HomeStack } from './HomeStack';
@@ -81,9 +85,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         onClose={() => setStartModalVisible(false)}
         onSelectTheme={(theme) => {
           setStartModalVisible(false);
-          // Navega para busca com o tema selecionado
-          navigation.navigate('HomeTab');
-          // TODO (Sprint 3): navegar para MatchSearch com o tema
+          // Navega para busca com o tema selecionado no stack interno
+          navigation.navigate('HomeTab', {
+            screen: 'MatchSearch',
+            params: { category: theme }
+          } as any);
         }}
       />
     </>
@@ -176,20 +182,54 @@ function StartModal({
 
 // ─── Navigator ─────────────────────────────────────────────────────
 export function AppTabNavigator() {
+  const { user, profile } = useAuth();
+  const navigation = useNavigation<any>();
+
+  const { incomingSession, dismissSession, acceptSession, isAccepting } =
+    useIncomingCall(user, profile);
+
+  const handleAccept = useCallback(
+    async (sessionId: string) => {
+      try {
+        await acceptSession(sessionId, (sid) => {
+          // Navega para o fluxo da sessão (ConsentScreen → VideoRoom)
+          navigation.navigate('Session', { sessionId: sid });
+        });
+      } catch (err: any) {
+        Alert.alert(
+          'Chamado Indisponível',
+          err?.message || 'Este chamado já foi aceito por outro apoiador ou foi cancelado.',
+          [{ text: 'OK' }]
+        );
+      }
+    },
+    [acceptSession, navigation]
+  );
+
   return (
-    <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        // Impede que o navigator reserve espaço para a tab bar nativa
-        tabBarStyle: { display: 'none' },
-      }}
-    >
-      <Tab.Screen name="HomeTab" component={HomeStack} />
-      <Tab.Screen name="SessionsTab" component={SessionsStack} />
-      <Tab.Screen name="WalletTab" component={WalletStack} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} />
-    </Tab.Navigator>
+    <>
+      <Tab.Navigator
+        tabBar={(props) => <CustomTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+          // Impede que o navigator reserve espaço para a tab bar nativa
+          tabBarStyle: { display: 'none' },
+        }}
+      >
+        <Tab.Screen name="HomeTab" component={HomeStack} />
+        <Tab.Screen name="SessionsTab" component={SessionsStack} />
+        <Tab.Screen name="WalletTab" component={WalletStack} />
+        <Tab.Screen name="ProfileTab" component={ProfileStack} />
+      </Tab.Navigator>
+
+      {/* Modal global de chamado — sobrepõe qualquer aba */}
+      <IncomingCallModal
+        session={incomingSession}
+        isAccepting={isAccepting}
+        onAccept={handleAccept}
+        onDecline={dismissSession}
+      />
+    </>
   );
 }
 

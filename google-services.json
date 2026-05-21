@@ -48,6 +48,42 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:665557596754:android:341ec97ed24dd63a273d8b",
+        "android_client_info": {
+          "package_name": "br.com.meubest.app.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5WsPy27utcS0DOw40kUOJKUf15y1QRFw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "665557596754-56d27ol8c022b0j7kdlnhte5c568nel0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "host.exp.exponent"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

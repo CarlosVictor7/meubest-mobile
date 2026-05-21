@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuthStore } from '@shared/stores/authStore';
 import { AuthNavigator } from './AuthNavigator';
 import { AppTabNavigator } from './AppTabNavigator';
+import { SessionNavigator } from './SessionNavigator';
 import type { RootStackParamList } from './types';
 import { colors } from '@constants/theme';
 
@@ -26,7 +27,14 @@ export function RootNavigator() {
     <NavigationContainer>
       <Root.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
-          <Root.Screen name="App" component={AppTabNavigator} />
+          <>
+            <Root.Screen name="App" component={AppTabNavigator} />
+            <Root.Screen 
+              name="Session" 
+              component={SessionNavigator} 
+              options={{ presentation: 'fullScreenModal' }}
+            />
+          </>
         ) : (
           <Root.Screen name="Auth" component={AuthNavigator} />
         )}

@@ -10,7 +10,8 @@ export interface TipPixResponse {
   receiverAmount: number;
   totalFeeAmount: number;
   paymentMethod: 'pix';
-  provider: 'mercadopago';
+  provider: 'asaas';
+  providerPaymentId?: string;
   providerCheckoutUrl?: string;
   pixQrCode?: string;
   pixQrCodeBase64?: string;
@@ -91,13 +92,19 @@ async function apiRequest<T>(
     },
   });
 
-  const json = await response.json();
-
-  if (!response.ok) {
-    throw new Error(json.error ?? `Erro ${response.status} na API`);
+  const responseText = await response.text();
+  let json: any;
+  try {
+    json = JSON.parse(responseText);
+  } catch (err) {
+    throw new Error(!response.ok ? `Erro ${response.status}: ${responseText}` : 'Resposta inválida do servidor (não é JSON)');
   }
 
-  return json.data as T;
+  if (!response.ok) {
+    throw new Error(json?.error ?? `Erro ${response.status} na API`);
+  }
+
+  return json?.data as T;
 }
 
 // ─── Funções públicas ─────────────────────────────────────────────────────────
@@ -155,4 +162,26 @@ export async function getMyTips(): Promise<{
   received: TipPixResponse[];
 }> {
   return apiRequest('/tips/me');
+}
+
+// ─── DEV ONLY ─────────────────────────────────────────────────────────────────
+
+export interface SimulateTipPaidResponse {
+  processed: boolean;
+  alreadyPaid: boolean;
+  tipId: string;
+  message: string;
+}
+
+/**
+ * [DEV ONLY] Simula a confirmação de pagamento de uma gorjeta pending.
+ * Chama POST /dev/tips/:tipId/simulate-paid na API local.
+ * Requer Firebase Auth token.
+ *
+ * ⚠️  Não usar em produção — o endpoint retorna 403 fora de development.
+ */
+export async function simulateTipPaid(tipId: string): Promise<SimulateTipPaidResponse> {
+  return apiRequest<SimulateTipPaidResponse>(`/dev/tips/${tipId}/simulate-paid`, {
+    method: 'POST',
+  });
 }

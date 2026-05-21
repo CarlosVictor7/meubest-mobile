@@ -177,6 +177,12 @@ export function HomeScreen() {
   );
   const recent = sessions.filter((s) => s.status === 'completed');
 
+  const handleSessionPress = useCallback((s: any) => {
+    if (s.status === 'active' || s.status === 'pending') {
+      (navigation as any).navigate('Session', { sessionId: s.id });
+    }
+  }, [navigation]);
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
@@ -262,7 +268,7 @@ export function HomeScreen() {
               </View>
             ) : (
               upcoming.slice(0, 2).map((s) => (
-                <SessionRow key={s.id} session={s} />
+                <SessionRow key={s.id} session={s} onPress={() => handleSessionPress(s)} />
               ))
             )}
 
@@ -331,7 +337,7 @@ export function HomeScreen() {
 }
 
 // ─── SessionRow ─────────────────────────────────────────────────────
-function SessionRow({ session, isRecent }: { session: any; isRecent?: boolean }) {
+function SessionRow({ session, isRecent, onPress }: { session: any; isRecent?: boolean; onPress?: () => void }) {
   const dateStr = session.selectedTime
     ? new Date(session.selectedTime).toLocaleDateString('pt-BR', {
         day: '2-digit',
@@ -357,7 +363,12 @@ function SessionRow({ session, isRecent }: { session: any; isRecent?: boolean })
   };
 
   return (
-    <View style={row.container}>
+    <TouchableOpacity 
+      style={row.container} 
+      onPress={onPress} 
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+    >
       <View style={row.iconWrap}>
         <Video size={16} color={colors.primary} />
       </View>
@@ -371,7 +382,7 @@ function SessionRow({ session, isRecent }: { session: any; isRecent?: boolean })
         </Text>
       </View>
       <ChevronRight size={16} color={colors.textMutedValue} />
-    </View>
+    </TouchableOpacity>
   );
 }
 

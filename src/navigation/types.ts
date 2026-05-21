@@ -19,7 +19,7 @@ export type AppTabParamList = {
 // ─── Home Stack ───────────────────────────────────────────────────
 export type HomeStackParamList = {
   Home: undefined;
-  MatchSearch: { role: 'speaker' | 'listener' };
+  MatchSearch: { category: string };
   ListenerProfile: { listenerId: string };
   ScheduleMatch: { listenerId?: string };
 };
@@ -29,6 +29,7 @@ export type SessionStackParamList = {
   Consent: { sessionId: string };
   VideoRoom: { sessionId: string };
   PostSession: { sessionId: string };
+  TipAfterSession: { sessionId: string };
 };
 
 // ─── Sessions Tab Stack ───────────────────────────────────────────
