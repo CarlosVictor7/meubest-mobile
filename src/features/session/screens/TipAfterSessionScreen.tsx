@@ -275,7 +275,9 @@ export function TipAfterSessionScreen() {
               <Text style={styles.boldText}>{supporterName}</Text>.
             </Text>
 
-            <Heart size={64} color={colors.primary} fill={colors.primary} style={styles.heartPulse} />
+            <View style={styles.heartContainer}>
+              <Heart size={60} color="#EF4444" fill="#EF4444" />
+            </View>
 
             <TouchableOpacity
               style={[styles.button, styles.confirmBtn, shadows.primary]}
@@ -742,8 +744,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     marginTop: spacing.lg,
   },
-  heartPulse: {
+  heartContainer: {
+    width: 88,
+    height: 88,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginVertical: spacing.lg,
-    transform: [{ scale: 1.1 }],
   },
 });
