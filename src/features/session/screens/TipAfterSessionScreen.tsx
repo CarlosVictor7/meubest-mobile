@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,23 @@ import {
   Platform,
 } from 'react-native';
 import { Gift, Copy, CheckCircle, Heart, X, ChevronRight } from 'lucide-react-native';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-import { createTipPixPayment, simulateTipPaid, TipPixResponse } from '@shared/services/paymentService';
+import { createTipPixPayment, getTipStatus, TipPixResponse } from '@shared/services/paymentService';
 import Toast from 'react-native-toast-message';
 
-const MIN_TIP_AMOUNT = 5;
+const MIN_TIP_AMOUNT = 10;
+const POLLING_INTERVAL_MS = 3000;
+const PAID_STATUSES = ['paid', 'confirmed', 'received'] as const;
+
+type PaidStatus = typeof PAID_STATUSES[number];
+
+function isPaidStatus(status: string): status is PaidStatus {
+  return (PAID_STATUSES as readonly string[]).includes(status);
+}
 
 export function TipAfterSessionScreen() {
   const navigation = useNavigation<any>();
@@ -43,10 +51,101 @@ export function TipAfterSessionScreen() {
   // Estados pós-geração do Pix
   const [pixData, setPixData] = useState<TipPixResponse | null>(null);
   const [copied, setCopied] = useState(false);
-  const [simulating, setSimulating] = useState(false);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
-  // Carregar dados da sessão e do apoiador
+  // Refs para controle de detecção de pagamento
+  const confirmedRef = useRef(false);
+  const unsubscribeFirestoreRef = useRef<(() => void) | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ─── Limpar listeners e polling ──────────────────────────────────────
+  const cancelAllWatchers = useCallback(() => {
+    if (unsubscribeFirestoreRef.current) {
+      unsubscribeFirestoreRef.current();
+      unsubscribeFirestoreRef.current = null;
+    }
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  // ─── Confirmar pagamento (chamado por qualquer fonte) ────────────────
+  const handlePaymentConfirmed = useCallback(() => {
+    if (confirmedRef.current) return;
+    confirmedRef.current = true;
+    cancelAllWatchers();
+    if (__DEV__) console.log('[TipAfterSession] payment confirmed: setando estado de sucesso');
+    setPaymentConfirmed(true);
+  }, [cancelAllWatchers]);
+
+  // ─── Iniciar detecção: Firestore onSnapshot + polling fallback ───────
+  const startPaymentDetection = useCallback((tipId: string) => {
+    if (__DEV__) console.log('[TipAfterSession] listening tip status:', tipId);
+
+    // 1. Firestore onSnapshot (tempo real)
+    try {
+      const tipRef = doc(db, 'tips', tipId);
+      const unsubscribe = onSnapshot(
+        tipRef,
+        (snap) => {
+          if (!snap.exists()) return;
+          const status = snap.data()?.status as string | undefined;
+          if (__DEV__) console.log('[TipAfterSession] Firestore tip status:', status);
+          if (status && isPaidStatus(status)) {
+            handlePaymentConfirmed();
+          }
+        },
+        (error) => {
+          // Silencia o erro — o polling vai cobrir o fallback
+          if (__DEV__) console.log('[TipAfterSession] Firestore onSnapshot error (usando polling como fallback):', error.code);
+        }
+      );
+      unsubscribeFirestoreRef.current = unsubscribe;
+    } catch (err) {
+      if (__DEV__) console.log('[TipAfterSession] Erro ao configurar onSnapshot:', err);
+    }
+
+    // 2. Polling fallback a cada 3s via API
+    pollingIntervalRef.current = setInterval(async () => {
+      if (confirmedRef.current) return;
+      try {
+        if (__DEV__) console.log('[TipAfterSession] polling tip status:', tipId);
+        const res = await getTipStatus(tipId);
+        if (__DEV__) console.log('[TipAfterSession] tip status changed:', res.status);
+        if (isPaidStatus(res.status)) {
+          handlePaymentConfirmed();
+        }
+      } catch (err) {
+        // Falha silenciosa — continua tentando
+        if (__DEV__) console.log('[TipAfterSession] polling error (tentando novamente)');
+      }
+    }, POLLING_INTERVAL_MS);
+  }, [handlePaymentConfirmed]);
+
+  // ─── Cleanup ao desmontar ─────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      cancelAllWatchers();
+    };
+  }, [cancelAllWatchers]);
+
+  // ─── Iniciar detecção quando pixData estiver disponível ─────────────
+  useEffect(() => {
+    if (pixData?.tipId && !confirmedRef.current) {
+      confirmedRef.current = false;
+      cancelAllWatchers();
+      if (__DEV__) console.log('[TipAfterSession] pix created tipId:', pixData.tipId);
+      startPaymentDetection(pixData.tipId);
+    }
+
+    return () => {
+      // Quando pixData mudar (novo Pix gerado), reinicia watchers
+      cancelAllWatchers();
+    };
+  }, [pixData?.tipId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Carregar dados da sessão e do apoiador ──────────────────────────
   useEffect(() => {
     let active = true;
 
@@ -79,7 +178,7 @@ export function TipAfterSessionScreen() {
   }, [sessionId]);
 
   const handleSkip = () => {
-    // Retorna para o início limpando o histórico de navegação
+    cancelAllWatchers();
     navigation.reset({
       index: 0,
       routes: [{ name: 'App' }],
@@ -133,6 +232,9 @@ export function TipAfterSessionScreen() {
         relatedSessionId: sessionId,
         message: 'Agradecimento especial pelo acolhimento no MeuBest!',
       });
+      // Resetar flag de confirmação para o novo Pix
+      confirmedRef.current = false;
+      setPaymentConfirmed(false);
       setPixData(response);
     } catch (error: any) {
       console.error('[TipAfterSession] Erro ao gerar Pix:', error);
@@ -145,35 +247,6 @@ export function TipAfterSessionScreen() {
     }
   };
 
-  // Simular confirmação de pagamento (DEV ONLY)
-  const handleSimulatePayment = async () => {
-    if (!pixData?.tipId) return;
-
-    setSimulating(true);
-    try {
-      const res = await simulateTipPaid(pixData.tipId);
-      if (res.processed || res.alreadyPaid) {
-        setPaymentConfirmed(true);
-        Toast.show({
-          type: 'success',
-          text1: 'Pagamento Simulado! 🎉',
-          text2: 'Gorjeta processada com sucesso no backend local.',
-        });
-      } else {
-        Toast.show({
-          type: 'info',
-          text1: 'Simulação',
-          text2: res.message || 'Gorjeta já estava paga ou não foi processada.',
-        });
-      }
-    } catch (err: any) {
-      console.error('[TipAfterSession] Erro ao simular:', err);
-      Alert.alert('Erro na Simulação', err?.message || 'Falha ao processar simulação.');
-    } finally {
-      setSimulating(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -183,7 +256,41 @@ export function TipAfterSessionScreen() {
     );
   }
 
-  // ─── TELA 2: Pix Gerado com Sucesso ─────────────────────────────────
+  // ─── TELA 3: Pagamento Confirmado ────────────────────────────────────
+  if (paymentConfirmed && pixData) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.card}>
+            <View style={styles.iconCircleSuccess}>
+              <CheckCircle size={32} color="#10B981" />
+            </View>
+
+            <Text style={styles.title}>PAGAMENTO CONFIRMADO! 🎉</Text>
+            <Text style={styles.subtitle}>
+              Obrigado por apoiar este acolhedor. Sua gorjeta de{' '}
+              <Text style={styles.boldText}>R$ {pixData.amountGross.toFixed(2).replace('.', ',')}</Text>{' '}
+              foi recebida com sucesso por{' '}
+              <Text style={styles.boldText}>{supporterName}</Text>.
+            </Text>
+
+            <Heart size={64} color={colors.primary} fill={colors.primary} style={styles.heartPulse} />
+
+            <TouchableOpacity
+              style={[styles.button, styles.confirmBtn, shadows.primary]}
+              onPress={handleSkip}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.buttonText}>VOLTAR PARA O INÍCIO</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ─── TELA 2: Pix Gerado — Aguardando pagamento ───────────────────────
   if (pixData) {
     return (
       <SafeAreaView style={styles.root}>
@@ -194,92 +301,57 @@ export function TipAfterSessionScreen() {
               <CheckCircle size={32} color="#10B981" />
             </View>
 
-            {paymentConfirmed ? (
-              <>
-                <Text style={styles.title}>MUITO OBRIGADO! 🎉</Text>
-                <Text style={styles.subtitle}>
-                  Sua gorjeta foi confirmada com sucesso. O voluntário <Text style={styles.boldText}>{supporterName}</Text> ficará muito feliz com o seu agradecimento!
-                </Text>
-                
-                <Heart size={64} color={colors.primary} fill={colors.primary} style={styles.heartPulse} />
+            <Text style={styles.title}>CÓDIGO PIX GERADO</Text>
+            <Text style={styles.subtitle}>
+              Escaneie o QR Code ou copie o código abaixo para enviar a gorjeta de{' '}
+              <Text style={styles.boldText}>R$ {pixData.amountGross.toFixed(2).replace('.', ',')}</Text>{' '}
+              para <Text style={styles.boldText}>{supporterName}</Text>.
+            </Text>
 
-                <TouchableOpacity
-                  style={[styles.button, styles.confirmBtn, shadows.primary]}
-                  onPress={handleSkip}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.buttonText}>CONCLUIR E VOLTAR</Text>
-                </TouchableOpacity>
-              </>
+            {/* Exibir QR Code se disponível em Base64 */}
+            {pixData.pixQrCodeBase64 ? (
+              <View style={styles.qrCodeBox}>
+                <Image
+                  source={{ uri: `data:image/png;base64,${pixData.pixQrCodeBase64}` }}
+                  style={styles.qrCodeImage}
+                />
+              </View>
             ) : (
-              <>
-                <Text style={styles.title}>CÓDIGO PIX GERADO</Text>
-                <Text style={styles.subtitle}>
-                  Escaneie o QR Code ou copie o código abaixo para enviar a gorjeta de <Text style={styles.boldText}>R$ {pixData.amountGross.toFixed(2)}</Text> para <Text style={styles.boldText}>{supporterName}</Text>.
-                </Text>
-
-                {/* Exibir QR Code se disponível em Base64 */}
-                {pixData.pixQrCodeBase64 ? (
-                  <View style={styles.qrCodeBox}>
-                    <Image
-                      source={{ uri: `data:image/png;base64,${pixData.pixQrCodeBase64}` }}
-                      style={styles.qrCodeImage}
-                    />
-                  </View>
-                ) : (
-                  <View style={styles.qrCodeFallback}>
-                    <Gift size={48} color={colors.primary} />
-                    <Text style={styles.qrCodeFallbackText}>Pix Gerado</Text>
-                  </View>
-                )}
-
-                {/* Copia e Cola */}
-                <TouchableOpacity
-                  style={styles.copyBox}
-                  activeOpacity={0.8}
-                  onPress={handleCopyPix}
-                >
-                  <Text style={styles.copyText} numberOfLines={1}>
-                    {pixData.pixCopyPaste || 'Código copia e cola'}
-                  </Text>
-                  <View style={styles.copyIconBox}>
-                    <Copy size={16} color={colors.primary} />
-                  </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.button, shadows.primary]}
-                  onPress={handleCopyPix}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.buttonText}>{copied ? 'CÓDIGO COPIADO!' : 'COPIAR CÓDIGO PIX'}</Text>
-                </TouchableOpacity>
-
-                {/* SIMULADOR DEV (Exibido apenas em Development/Local API) */}
-                {__DEV__ && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.simulateBtn]}
-                    onPress={handleSimulatePayment}
-                    disabled={simulating}
-                    activeOpacity={0.85}
-                  >
-                    {simulating ? (
-                      <ActivityIndicator size="small" color="#FFF" />
-                    ) : (
-                      <Text style={styles.simulateBtnText}>🧪 SIMULAR PAGAMENTO (DEV ONLY)</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.laterBtn}
-                  onPress={handleSkip}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.laterBtnText}>Voltar para o Início</Text>
-                </TouchableOpacity>
-              </>
+              <View style={styles.qrCodeFallback}>
+                <Gift size={48} color={colors.primary} />
+                <Text style={styles.qrCodeFallbackText}>Pix Gerado</Text>
+              </View>
             )}
+
+            {/* Copia e Cola */}
+            <TouchableOpacity
+              style={styles.copyBox}
+              activeOpacity={0.8}
+              onPress={handleCopyPix}
+            >
+              <Text style={styles.copyText} numberOfLines={1}>
+                {pixData.pixCopyPaste || 'Código copia e cola'}
+              </Text>
+              <View style={styles.copyIconBox}>
+                <Copy size={16} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, shadows.primary]}
+              onPress={handleCopyPix}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.buttonText}>{copied ? 'CÓDIGO COPIADO!' : 'COPIAR CÓDIGO PIX'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.laterBtn}
+              onPress={handleSkip}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.laterBtnText}>Voltar para o Início</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -312,7 +384,7 @@ export function TipAfterSessionScreen() {
 
           {/* Grid de Opções de Valor */}
           <View style={styles.grid}>
-            {[5, 10, 20].map((val) => (
+            {[10, 20, 50].map((val) => (
               <TouchableOpacity
                 key={val}
                 style={[
@@ -665,16 +737,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: spacing.xs,
-  },
-  simulateBtn: {
-    backgroundColor: '#4B5563',
-    marginTop: spacing.md,
-  },
-  simulateBtnText: {
-    fontSize: typography.size.xs + 1,
-    fontWeight: typography.weight.bold,
-    color: '#FFF',
-    letterSpacing: 1,
   },
   confirmBtn: {
     backgroundColor: '#10B981',

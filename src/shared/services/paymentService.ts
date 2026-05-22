@@ -164,6 +164,21 @@ export async function getMyTips(): Promise<{
   return apiRequest('/tips/me');
 }
 
+// ─── Consulta de status ──────────────────────────────────────────────────────
+
+export interface TipStatusResponse {
+  tipId: string;
+  status: 'pending' | 'paid' | 'confirmed' | 'received' | 'failed' | 'canceled' | 'refunded';
+}
+
+/**
+ * Consulta o status atual de uma gorjeta pelo ID.
+ * Usado como fallback de polling quando o onSnapshot do Firestore não está disponível.
+ */
+export async function getTipStatus(tipId: string): Promise<TipStatusResponse> {
+  return apiRequest<TipStatusResponse>(`/tips/${tipId}/status`);
+}
+
 // ─── DEV ONLY ─────────────────────────────────────────────────────────────────
 
 export interface SimulateTipPaidResponse {
