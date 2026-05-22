@@ -8,12 +8,23 @@ import {
   StatusBar,
   Alert,
   BackHandler,
+  Modal,
+  ScrollView,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
 import { WebView } from 'react-native-webview';
-import { PhoneOff, ShieldCheck } from 'lucide-react-native';
-import { doc, onSnapshot, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { PhoneOff, ShieldCheck, Gift, ShieldAlert } from 'lucide-react-native';
+import {
+  doc,
+  onSnapshot,
+  updateDoc,
+  serverTimestamp,
+  getDoc,
+  addDoc,
+  collection,
+} from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
@@ -95,6 +106,14 @@ const JITSI_HANGUP_BRIDGE_JS = `
 })();
 `;
 
+const REPORT_REASONS = [
+  'Abuso / Assédio',
+  'Racismo',
+  'Discriminação',
+  'Linguagem Imprópria',
+  'Outros',
+] as const;
+
 export function VideoRoomScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -108,9 +127,23 @@ export function VideoRoomScreen() {
   const [sessionStartTime] = useState(Date.now());
   const [elapsedText, setElapsedText] = useState('00:00');
 
+  // Oculta a WebView imediatamente ao encerrar, evitando flash da home do Jitsi
+  const [webViewVisible, setWebViewVisible] = useState(true);
+
+  // ─── Estado de denúncia ──────────────────────────────────────────────
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportComment, setReportComment] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+
   const webViewRef = useRef<WebView>(null);
   // Ref como guard: evita duplo encerramento pelo botão custom + botão nativo do Jitsi
   const isEndingCallRef = useRef(false);
+
+  // ─── Determinar papel do usuário na sessão ───────────────────────────
+  // isSpeaker: usuário que buscou a sessão (pode dar gorjeta ao apoiador)
+  const isSpeaker =
+    profile?.role === 'speaker' || session?.speakerId === user?.uid;
 
   // ─── Timer da Sessão ────────────────────────────────────────────────
   useEffect(() => {
@@ -142,7 +175,7 @@ export function VideoRoomScreen() {
 
   // ─── Encerrar sessão no Firestore (função centralizada) ──────────────
   // Guard isEndingCallRef impede duplo encerramento de qualquer origem.
-  // Preenche: status, endedAt, endedBy, endReason, actualDuration.
+  // webViewVisible=false oculta WebView imediatamente (evita flash da home do Jitsi).
   const completeSessionAndExit = useCallback(
     async (reason: 'user_hangup' | 'jitsi_native_hangup' | 'remote_completed' = 'user_hangup') => {
       if (isEndingCallRef.current) {
@@ -150,6 +183,10 @@ export function VideoRoomScreen() {
         return;
       }
       isEndingCallRef.current = true;
+
+      // Ocultar WebView imediatamente para evitar flash da home do Jitsi
+      setWebViewVisible(false);
+
       console.log('[CallEnd Mobile] button pressed / hangup triggered');
       console.log('[CallEnd Mobile] sessionId:', sessionId);
       console.log('[CallEnd Mobile] reason:', reason);
@@ -191,6 +228,7 @@ export function VideoRoomScreen() {
         console.error('[CallEnd Mobile] Firestore update FAILED:', error);
         Alert.alert('Erro', 'Não foi possível encerrar a chamada no momento.');
         isEndingCallRef.current = false;
+        setWebViewVisible(true); // Restaura WebView se falhou
       }
     },
     [sessionId, sessionStartTime, user?.uid, navigation]
@@ -215,6 +253,7 @@ export function VideoRoomScreen() {
               // Encerrado pelo outro lado (remote)
               console.log('[CallEnd Mobile] remote completed detected — navigating to PostSession');
               isEndingCallRef.current = true;
+              setWebViewVisible(false); // Oculta WebView também no encerramento remoto
             } else {
               console.log('[CallEnd Mobile] own completion confirmed in Firestore');
             }
@@ -266,6 +305,55 @@ export function VideoRoomScreen() {
     [completeSessionAndExit]
   );
 
+  // ─── Gorjeta durante chamada ────────────────────────────────────────
+  const handleOpenTip = useCallback(() => {
+    if (!session?.listenerId) {
+      Alert.alert('Apoiador Indisponível', 'Não foi possível identificar o recebedor da gorjeta.');
+      return;
+    }
+    // Navega para gorjeta com fromCall=true — ao voltar, retorna para esta tela
+    navigation.navigate('TipAfterSession', { sessionId, fromCall: true });
+  }, [session?.listenerId, navigation, sessionId]);
+
+  // ─── Denúncia ───────────────────────────────────────────────────────
+  const submitReport = async () => {
+    if (!reportReason) {
+      Alert.alert('Motivo obrigatório', 'Por favor, selecione um motivo para a denúncia.');
+      return;
+    }
+    if (!session || !user) return;
+
+    setIsSubmittingReport(true);
+    try {
+      const reportedUserId =
+        session.speakerId === user.uid ? session.listenerId : session.speakerId;
+
+      await addDoc(collection(db, 'reports'), {
+        sessionId,
+        reporterId: user.uid,
+        reportedId: reportedUserId,
+        reason: reportReason,
+        comment: reportComment.trim() || null,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+
+      // Fecha modal e reseta campos
+      setIsReportModalOpen(false);
+      setReportReason('');
+      setReportComment('');
+      Alert.alert(
+        'Denúncia Enviada',
+        'Sua denúncia é anônima e será analisada pela nossa equipe de moderação.'
+      );
+    } catch (error) {
+      console.error('[VideoRoom] Erro ao enviar denúncia:', error);
+      Alert.alert('Erro', 'Não foi possível enviar sua denúncia. Tente novamente.');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
   if (hasPermissions === null || loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -304,52 +392,80 @@ export function VideoRoomScreen() {
 
       {/* ── Área de Vídeo (WebView) — 100% da tela ── */}
       <View style={styles.videoContainer}>
-        <WebView
-          ref={webViewRef}
-          source={{ uri: jitsiUrl }}
-          style={styles.webview}
-          originWhitelist={['*']}
-          mediaPlaybackRequiresUserAction={false}
-          domStorageEnabled={true}
-          javaScriptEnabled={true}
-          allowFileAccess={true}
-          allowsInlineMediaPlayback={true}
-          setSupportMultipleWindows={false}
-          // Injeta o script ANTES do content para garantir que os listeners estejam prontos
-          injectedJavaScriptBeforeContentLoaded={JITSI_HANGUP_BRIDGE_JS}
-          onMessage={handleWebViewMessage}
-          onShouldStartLoadWithRequest={(request) => {
-            const url = request.url || '';
-            console.log('[JitsiWebView] Trying to load URL:', url);
-            if (
-              url.startsWith('intent://') ||
-              url.startsWith('market://') ||
-              url.includes('play.google.com') ||
-              url.includes('itunes.apple.com') ||
-              url.startsWith('whatsapp://') ||
-              url.startsWith('tel:') ||
-              url.startsWith('mailto:')
-            ) {
-              console.log('[JitsiWebView] Blocked external navigation:', url);
-              return false;
-            }
-            const allowedDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
-            const isAllowed =
-              url.includes(allowedDomain) ||
-              url.startsWith('about:blank') ||
-              url.startsWith('blob:');
-            if (!isAllowed) {
-              console.log('[JitsiWebView] Blocked non-jitsi domain navigation:', url);
-              return false;
-            }
-            return true;
-          }}
-          {...{
-            onPermissionRequest: (request: any) => {
-              request.grant(request.resources);
-            },
-          } as any}
-        />
+        {webViewVisible ? (
+          <WebView
+            ref={webViewRef}
+            source={{ uri: jitsiUrl }}
+            style={styles.webview}
+            originWhitelist={['*']}
+            mediaPlaybackRequiresUserAction={false}
+            domStorageEnabled={true}
+            javaScriptEnabled={true}
+            allowFileAccess={true}
+            allowsInlineMediaPlayback={true}
+            setSupportMultipleWindows={false}
+            // Injeta o script ANTES do content para garantir que os listeners estejam prontos
+            injectedJavaScriptBeforeContentLoaded={JITSI_HANGUP_BRIDGE_JS}
+            onMessage={handleWebViewMessage}
+            onShouldStartLoadWithRequest={(request) => {
+              const url = request.url || '';
+              if (
+                url.startsWith('intent://') ||
+                url.startsWith('market://') ||
+                url.includes('play.google.com') ||
+                url.includes('itunes.apple.com') ||
+                url.startsWith('whatsapp://') ||
+                url.startsWith('tel:') ||
+                url.startsWith('mailto:')
+              ) {
+                return false;
+              }
+              const allowedDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
+
+              // ── Detectar e bloquear redirecionamento para home do Jitsi ─────────────────
+              // Quando o usuário clica no botão vermelho nativo do Jitsi, o servidor navega
+              // a WebView para a raiz (sem o hash da sala) ANTES de disparar o postMessage.
+              // Interceptar aqui garante que a home nunca aparece para o usuário.
+              try {
+                const parsedUrl = new URL(url);
+                const currentRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
+                const isJitsiDomain = parsedUrl.hostname === allowedDomain;
+                const isRootOrHome = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
+                const hasRoomHash = url.includes(currentRoomName);
+
+                if (isJitsiDomain && isRootOrHome && !hasRoomHash && !isEndingCallRef.current) {
+                  console.log('[JitsiHangup Mobile] blocked Jitsi home redirect');
+                  setWebViewVisible(false);
+                  console.log('[JitsiHangup Mobile] hiding WebView before redirect');
+                  completeSessionAndExit('jitsi_native_hangup');
+                  console.log('[JitsiHangup Mobile] completing Meu Best session');
+                  return false;
+                }
+              } catch (_) {}
+              // ─────────────────────────────────────────────────────────────────────────────
+
+              const isAllowed =
+                url.includes(allowedDomain) ||
+                url.startsWith('about:blank') ||
+                url.startsWith('blob:');
+              if (!isAllowed) {
+                return false;
+              }
+              return true;
+            }}
+            {...{
+              onPermissionRequest: (request: any) => {
+                request.grant(request.resources);
+              },
+            } as any}
+          />
+        ) : (
+          // Placeholder escuro enquanto a sessão encerra (evita flash da home Jitsi)
+          <View style={styles.callEndingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.callEndingText}>Encerrando sessão...</Text>
+          </View>
+        )}
       </View>
 
       {/* ── Header compacto flutuante superior ──────────────────────
@@ -378,7 +494,32 @@ export function VideoRoomScreen() {
           </View>
         </View>
 
-        {/* Botão Encerrar */}
+        {/* Lado direito: botões de ação */}
+        <View style={styles.headerActions}>
+          {/* Botão Gorjeta — apenas para o speaker/ouvinte */}
+          {isSpeaker && session && (
+            <TouchableOpacity
+              style={styles.tipBtn}
+              onPress={handleOpenTip}
+              activeOpacity={0.8}
+            >
+              <Gift size={13} color={colors.primary} strokeWidth={2.2} />
+              <Text style={styles.tipBtnText}>GORJETA</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Botão Denunciar */}
+          {session && (
+            <TouchableOpacity
+              style={styles.reportBtn}
+              onPress={() => setIsReportModalOpen(true)}
+              activeOpacity={0.8}
+            >
+              <ShieldAlert size={13} color="#EF4444" strokeWidth={2.2} />
+            </TouchableOpacity>
+          )}
+
+          {/* Botão Encerrar */}
           <TouchableOpacity
             style={styles.endCallBtn}
             onPress={() => {
@@ -387,10 +528,102 @@ export function VideoRoomScreen() {
             }}
             activeOpacity={0.8}
           >
-          <PhoneOff size={13} color={colors.textInverted} strokeWidth={2.2} />
-          <Text style={styles.endCallText}>ENCERRAR</Text>
-        </TouchableOpacity>
+            <PhoneOff size={13} color={colors.textInverted} strokeWidth={2.2} />
+            <Text style={styles.endCallText}>ENCERRAR</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* ── Modal de Denúncia ──────────────────────────────────────── */}
+      <Modal
+        visible={isReportModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsReportModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.reportModal}>
+            {/* Cabeçalho */}
+            <View style={styles.reportIconContainer}>
+              <ShieldAlert size={32} color="#EF4444" />
+            </View>
+            <Text style={styles.reportTitle}>Denunciar Usuário</Text>
+            <Text style={styles.reportSubtitle}>
+              Sua denúncia é anônima e será analisada pela nossa equipe de moderação.
+            </Text>
+
+            {/* Motivos */}
+            <ScrollView style={styles.reasonsScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.reasonsLabel}>MOTIVO DA DENÚNCIA</Text>
+              {REPORT_REASONS.map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[
+                    styles.reasonOption,
+                    reportReason === reason && styles.reasonOptionSelected,
+                  ]}
+                  onPress={() => setReportReason(reason)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.reasonOptionText,
+                      reportReason === reason && styles.reasonOptionTextSelected,
+                    ]}
+                  >
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {/* Campo de texto quando "Outros" */}
+              {reportReason === 'Outros' && (
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder="Descreva o ocorrido..."
+                  placeholderTextColor="#9CA3AF"
+                  value={reportComment}
+                  onChangeText={setReportComment}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={300}
+                />
+              )}
+            </ScrollView>
+
+            {/* Botões */}
+            <View style={styles.reportActions}>
+              <TouchableOpacity
+                style={styles.cancelReportBtn}
+                onPress={() => {
+                  setIsReportModalOpen(false);
+                  setReportReason('');
+                  setReportComment('');
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cancelReportText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitReportBtn,
+                  (!reportReason || isSubmittingReport) && styles.submitReportBtnDisabled,
+                ]}
+                onPress={submitReport}
+                disabled={!reportReason || isSubmittingReport}
+                activeOpacity={0.85}
+              >
+                {isSubmittingReport ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitReportText}>Enviar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -447,19 +680,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  callEndingOverlay: {
+    flex: 1,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  callEndingText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    letterSpacing: 0.5,
+  },
 
   // ── Header superior flutuante ─────────────────────────────────────
   header: {
     position: 'absolute',
     left: 12,
     right: 12,
-    height: 52,
+    minHeight: 52,
     backgroundColor: 'rgba(10, 10, 10, 0.82)',
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.09)',
     // Sombra para destacar sobre o Jitsi
@@ -477,6 +724,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.sm,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   shieldBadge: {
     width: 28,
     height: 28,
@@ -492,7 +744,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     fontWeight: typography.weight.black,
     textTransform: 'capitalize',
-    maxWidth: 160,
+    maxWidth: 120,
   },
   timerLabel: {
     color: 'rgba(255,255,255,0.42)',
@@ -500,6 +752,39 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.bold,
     letterSpacing: 0.2,
   },
+
+  // Botão Gorjeta
+  tipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: `${colors.primary}22`,
+    borderRadius: borderRadius.full,
+    paddingVertical: 7,
+    paddingHorizontal: spacing.sm,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: `${colors.primary}44`,
+  },
+  tipBtnText: {
+    color: colors.primary,
+    fontWeight: typography.weight.black,
+    fontSize: 9,
+    letterSpacing: 0.7,
+  },
+
+  // Botão Denunciar
+  reportBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
   endCallBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -509,7 +794,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: spacing.sm + 4,
     gap: 5,
-    minWidth: 96,
+    minWidth: 88,
     shadowColor: '#EF4444',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.4,
@@ -521,5 +806,129 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.black,
     fontSize: 10,
     letterSpacing: 0.7,
+  },
+
+  // ── Modal de Denúncia ─────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  reportModal: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl,
+    maxHeight: '80%',
+  },
+  reportIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 3,
+    borderColor: '#FECACA',
+  },
+  reportTitle: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.black,
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  reportSubtitle: {
+    fontSize: typography.size.xs + 1,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    fontWeight: typography.weight.medium,
+    marginBottom: spacing.lg,
+  },
+  reasonsScroll: {
+    maxHeight: 280,
+  },
+  reasonsLabel: {
+    fontSize: 10,
+    fontWeight: typography.weight.black,
+    color: '#9CA3AF',
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+  },
+  reasonOption: {
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
+    marginBottom: spacing.xs,
+  },
+  reasonOptionSelected: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  reasonOptionText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    color: '#6B7280',
+  },
+  reasonOptionTextSelected: {
+    color: '#EF4444',
+  },
+  commentInput: {
+    marginTop: spacing.sm,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: '#F3F4F6',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    fontSize: typography.size.sm,
+    color: '#1F2937',
+    textAlignVertical: 'top',
+    minHeight: 80,
+    fontWeight: typography.weight.medium,
+  },
+  reportActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  cancelReportBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  cancelReportText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    color: '#6B7280',
+  },
+  submitReportBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitReportBtnDisabled: {
+    opacity: 0.5,
+  },
+  submitReportText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: '#FFF',
+    letterSpacing: 0.5,
   },
 });

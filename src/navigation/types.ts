@@ -29,7 +29,7 @@ export type SessionStackParamList = {
   Consent: { sessionId: string };
   VideoRoom: { sessionId: string };
   PostSession: { sessionId: string };
-  TipAfterSession: { sessionId: string };
+  TipAfterSession: { sessionId: string; fromCall?: boolean };
 };
 
 // ─── Sessions Tab Stack ───────────────────────────────────────────

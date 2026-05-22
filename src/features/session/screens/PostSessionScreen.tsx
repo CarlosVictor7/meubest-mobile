@@ -114,6 +114,14 @@ export function PostSessionScreen() {
     }
   };
 
+  // Pular avaliação — não salva avaliação, não abre gorjeta, reseta para Home
+  const handleSkipReview = () => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'App' }],
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -196,6 +204,16 @@ export function PostSessionScreen() {
               ) : (
                 <Text style={styles.buttonText}>Enviar Avaliação</Text>
               )}
+            </TouchableOpacity>
+
+            {/* Botão Pular — não salva, não abre gorjeta, volta para Home */}
+            <TouchableOpacity
+              style={styles.skipButton}
+              onPress={handleSkipReview}
+              activeOpacity={0.7}
+              disabled={submitting}
+            >
+              <Text style={styles.skipButtonText}>Pular e voltar ao início</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -325,6 +343,19 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.black,
     color: colors.textInverted,
+    textTransform: 'uppercase',
+    letterSpacing: typography.tracking.widest,
+  },
+  skipButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    marginTop: spacing.xs,
+  },
+  skipButtonText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
+    color: colors.textMutedValue,
     textTransform: 'uppercase',
     letterSpacing: typography.tracking.widest,
   },

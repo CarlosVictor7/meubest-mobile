@@ -36,7 +36,7 @@ function isPaidStatus(status: string): status is PaidStatus {
 export function TipAfterSessionScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { sessionId } = route.params;
+  const { sessionId, fromCall } = route.params;
   const { user } = useAuth();
 
   const [session, setSession] = useState<any>(null);
@@ -179,10 +179,15 @@ export function TipAfterSessionScreen() {
 
   const handleSkip = () => {
     cancelAllWatchers();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'App' }],
-    });
+    if (fromCall) {
+      // Volta para a chamada ativa sem encerrar a sessão
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'App' }],
+      });
+    }
   };
 
   const handleCopyPix = () => {
