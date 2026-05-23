@@ -267,6 +267,21 @@ export function VideoRoomScreen() {
     return () => unsub();
   }, [sessionId, navigation]);
 
+  // Fallback anti-loading infinito no Mobile
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    if (!webViewVisible && isEndingCallRef.current) {
+      console.log('[VideoRoom Mobile] anti-loading guard started (8s)');
+      timeout = setTimeout(() => {
+        console.warn('[VideoRoom Mobile] anti-loading fallback triggered! Forcing navigation.');
+        navigation.replace('PostSession', { sessionId });
+      }, 8000);
+    }
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [webViewVisible, sessionId, navigation]);
+
   // ─── Prevenir BackButton físico do Android ──────────────────────────
   useEffect(() => {
     const onBackPress = () => {
@@ -379,7 +394,7 @@ export function VideoRoomScreen() {
   const jitsiBaseUrl = jitsiDomain.startsWith('http') ? jitsiDomain : `https://${jitsiDomain}`;
   const jitsiRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
   const displayName = encodeURIComponent(profile?.name || 'Acolhedor/Ouvinte');
-  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.MOBILE_APP_PROMO=false&interfaceConfig.TOOLBAR_BUTTONS=["microphone","camera","closedcaptions","desktop","fullscreen","fittowindow","hangup","profile","chat","settings","videoquality","filmstrip","feedback","stats","shortcuts","tileview","videobackgroundblur","download","help","mute-everyone","security"]&userInfo.displayName="${displayName}"`;
+  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.MOBILE_APP_PROMO=false&interfaceConfig.TOOLBAR_BUTTONS=["microphone","camera","closedcaptions","desktop","fullscreen","fittowindow","profile","chat","settings","videoquality","filmstrip","feedback","stats","shortcuts","tileview","videobackgroundblur","download","help","mute-everyone","security"]&userInfo.displayName="${displayName}"`;
 
   // Header compacto posicionado abaixo do status bar/notch, não cobre controles do Jitsi
   const headerTop = insets.top + 12;
