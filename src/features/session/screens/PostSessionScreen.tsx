@@ -44,6 +44,22 @@ export function PostSessionScreen() {
     return () => unsub();
   }, [sessionId]);
 
+  // isSpeaker e canShowTip no escopo do componente —
+  // necessário para que handleSkipReview também tenha acesso,
+  // não apenas handleSubmit.
+  const isSpeaker = profile?.role === 'speaker' || (!!session && session.speakerId === user?.uid);
+  const canShowTip = isSpeaker && !!session?.listenerId && session?.listenerId !== user?.uid;
+
+  // Função centralizada: avança para gorjeta (speaker) ou Home (listener)
+  // Chamada tanto ao enviar avaliação quanto ao pular
+  const goToNextPostSessionStep = () => {
+    if (canShowTip) {
+      navigation.navigate('TipAfterSession', { sessionId });
+    } else {
+      navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+    }
+  };
+
   const handleSubmit = async () => {
     if (rating === 0) {
       Toast.show({
@@ -57,7 +73,6 @@ export function PostSessionScreen() {
     if (!user || !session) return;
 
     setSubmitting(true);
-    const isSpeaker = profile?.role === 'speaker' || session.speakerId === user.uid;
     const targetUserId = isSpeaker ? session.listenerId : session.speakerId;
     const visibleAt = new Date();
     visibleAt.setDate(visibleAt.getDate() + 3);
@@ -92,16 +107,7 @@ export function PostSessionScreen() {
         text2: 'Obrigado por ajudar a manter nossa comunidade segura!',
       });
 
-      if (isSpeaker && session.listenerId) {
-        // Se for o orador (ouvinte da conversa) e tem um apoiador na sessão, vai para gorjeta
-        navigation.navigate('TipAfterSession', { sessionId });
-      } else {
-        // Se for o próprio apoiador, volta direto para o Início limpando o histórico
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'App' }],
-        });
-      }
+      goToNextPostSessionStep();
     } catch (error) {
       console.error('Erro ao enviar avaliação:', error);
       Toast.show({
@@ -114,12 +120,10 @@ export function PostSessionScreen() {
     }
   };
 
-  // Pular avaliação — não salva avaliação, não abre gorjeta, reseta para Home
+  // Pular avaliação — não salva, mas segue o mesmo fluxo pós-sessão
+  // Speaker/ouvinte vai para gorjeta; listener/apoiador vai para Home
   const handleSkipReview = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'App' }],
-    });
+    goToNextPostSessionStep();
   };
 
   if (loading) {
@@ -213,7 +217,7 @@ export function PostSessionScreen() {
               activeOpacity={0.7}
               disabled={submitting}
             >
-              <Text style={styles.skipButtonText}>Pular e voltar ao início</Text>
+              <Text style={styles.skipButtonText}>Pular</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
