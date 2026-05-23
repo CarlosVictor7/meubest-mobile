@@ -7,7 +7,9 @@ export interface BankDetails {
   pix?: string;
   bankName?: string;
   accountNumber?: string;
+  pixKeyType?: string;
 }
+
 
 export interface UserProfile {
   uid: string;

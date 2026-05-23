@@ -49,8 +49,10 @@ export interface CreateTipPixParams {
 export interface RequestWithdrawalParams {
   amount: number;
   pixKey: string;
+  pixKeyType: 'CPF' | 'CNPJ' | 'EMAIL' | 'PHONE' | 'EVP';
   bankName?: string;
 }
+
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 

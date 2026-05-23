@@ -14,7 +14,7 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary, getWalletTransactions, requestWithdrawal, type WalletSummary, type Transaction } from '@shared/services/paymentService';
-import { detectPixKeyType, maskPixKey } from '@shared/utils/pix';
+import { detectPixKeyType, maskPixKey, PixKeyType, getPixValidationError, formatCpf, formatCnpj, formatPhoneBr, normalizePixKey, getFriendlyPixTypeLabel } from '@shared/utils/pix';
 import { formatTransactionDate, getTransactionDate } from '@shared/utils/date';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { doc, setDoc } from 'firebase/firestore';
@@ -28,6 +28,7 @@ export function WalletScreen() {
 
   // Form state
   const [pixKey, setPixKey] = useState('');
+  const [pixKeyType, setPixKeyType] = useState<PixKeyType>('CPF');
   const [bankName, setBankName] = useState('');
   const [withdrawAmountStr, setWithdrawAmountStr] = useState('');
 
@@ -41,11 +42,31 @@ export function WalletScreen() {
   const hasBankDetails = Boolean(profile?.bankDetails?.pix);
   const [isEditingBankDetails, setIsEditingBankDetails] = useState(false);
 
-  // Initialize pixKey and bankName from profile when not editing
+  // Initialize pixKey, bankName and pixKeyType from profile when not editing
   useEffect(() => {
     if (!isEditingBankDetails && profile?.bankDetails) {
-      setPixKey(profile.bankDetails.pix || '');
+      const initialPix = profile.bankDetails.pix || '';
       setBankName(profile.bankDetails.bankName || '');
+      
+      const savedType = profile.bankDetails.pixKeyType as PixKeyType;
+      let detectedType: PixKeyType = 'CPF';
+      if (savedType) {
+        detectedType = savedType;
+      } else if (initialPix.trim().length > 0) {
+        const detected = detectPixKeyType(initialPix);
+        if (detected === 'CPF') detectedType = 'CPF';
+        else if (detected === 'CNPJ') detectedType = 'CNPJ';
+        else if (detected === 'E-mail') detectedType = 'EMAIL';
+        else if (detected === 'Celular') detectedType = 'PHONE';
+        else detectedType = 'EVP';
+      }
+      setPixKeyType(detectedType);
+
+      let formatted = initialPix;
+      if (detectedType === 'CPF') formatted = formatCpf(initialPix);
+      else if (detectedType === 'CNPJ') formatted = formatCnpj(initialPix);
+      else if (detectedType === 'PHONE') formatted = formatPhoneBr(initialPix);
+      setPixKey(formatted);
     }
   }, [isEditingBankDetails, profile?.bankDetails]);
 
@@ -75,7 +96,8 @@ export function WalletScreen() {
 
   const availableBalance = summary?.balanceRewards || 0;
   const withdrawAmount = parseFloat(withdrawAmountStr.replace(',', '.')) || 0;
-  const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0;
+  const pixValidationError = pixKey.trim().length > 0 ? getPixValidationError(pixKeyType, pixKey) : '';
+  const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0 && !pixValidationError;
 
   const validTransactions = (transactions || []).filter(tx => {
     if (!tx) return false;
@@ -120,7 +142,7 @@ export function WalletScreen() {
     if (!canWithdraw) return;
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal({ amount: withdrawAmount, pixKey, bankName });
+      await requestWithdrawal({ amount: withdrawAmount, pixKey, pixKeyType, bankName });
       Alert.alert('Sucesso', 'Saque solicitado com sucesso!');
       setWithdrawModal(false);
       setWithdrawAmountStr('');
@@ -137,13 +159,20 @@ export function WalletScreen() {
       Alert.alert('Campos obrigatórios', 'Preencha a chave PIX e o banco.');
       return;
     }
+    const validationError = getPixValidationError(pixKeyType, pixKey);
+    if (validationError) {
+      Alert.alert('Erro de validação', validationError);
+      return;
+    }
     if (!user?.uid) return;
     try {
+      const normalizedPix = normalizePixKey(pixKeyType, pixKey);
       const userRef = doc(db, 'users', user.uid);
       await setDoc(userRef, {
         bankDetails: {
-          pix: pixKey.trim(),
+          pix: normalizedPix,
           bankName: bankName.trim(),
+          pixKeyType: pixKeyType,
         }
       }, { merge: true });
       Alert.alert('Sucesso', 'Dados salvos com sucesso.');
@@ -354,22 +383,86 @@ export function WalletScreen() {
             <Text style={s.bankDesc}>
               Cadastre sua chave PIX para receber as gorjetas das suas sessões.
             </Text>
+            {/* Tipo de chave Pix */}
+            <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
+              <Text style={s.fieldLabel}>TIPO DE CHAVE PIX</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                {(['CPF', 'CNPJ', 'EMAIL', 'PHONE', 'EVP'] as PixKeyType[]).map((t) => {
+                  const isSelected = pixKeyType === t;
+                  const labelMap: Record<PixKeyType, string> = {
+                    CPF: 'CPF',
+                    CNPJ: 'CNPJ',
+                    EMAIL: 'E-mail',
+                    PHONE: 'Telefone',
+                    EVP: 'Chave Aleatória',
+                  };
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      onPress={() => {
+                        setPixKeyType(t);
+                        setPixKey(''); // Limpa a chave
+                      }}
+                      style={{
+                        backgroundColor: isSelected ? colors.primary : colors.background,
+                        borderWidth: 2,
+                        borderColor: isSelected ? colors.primary : colors.primaryLight,
+                        borderRadius: 20,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        color: isSelected ? colors.textInverted : colors.text,
+                      }}>
+                        {labelMap[t]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             {/* Chave PIX */}
             <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
               <Text style={s.fieldLabel}>CHAVE PIX</Text>
               <TextInput
                 style={s.input}
-                placeholder="CPF, Email ou Celular"
+                placeholder={
+                  pixKeyType === 'CPF' ? '000.000.000-00' :
+                  pixKeyType === 'CNPJ' ? '00.000.000/0000-00' :
+                  pixKeyType === 'EMAIL' ? 'seuemail@exemplo.com' :
+                  pixKeyType === 'PHONE' ? '(00) 00000-0000' :
+                  'Cole a chave aleatória do seu banco'
+                }
                 placeholderTextColor={colors.textMutedValue}
                 value={pixKey}
-                onChangeText={setPixKey}
+                onChangeText={(val) => {
+                  let formatted = val;
+                  if (pixKeyType === 'CPF') formatted = formatCpf(val);
+                  else if (pixKeyType === 'CNPJ') formatted = formatCnpj(val);
+                  else if (pixKeyType === 'PHONE') formatted = formatPhoneBr(val);
+                  setPixKey(formatted);
+                }}
                 autoCapitalize="none"
               />
-              {pixKey.trim().length > 0 && (
-                <View style={s.pixTypeBadge}>
-                  <Text style={s.pixTypeText}>Tipo identificado: {detectPixKeyType(pixKey)}</Text>
-                </View>
-              )}
+              <View style={s.pixTypeBadge}>
+                <Text style={s.pixTypeText}>Tipo selecionado: {getFriendlyPixTypeLabel(pixKeyType)}</Text>
+              </View>
+              {pixKey.trim().length > 0 && (() => {
+                const err = getPixValidationError(pixKeyType, pixKey);
+                if (err) {
+                  return (
+                    <Text style={{ fontSize: 11, color: colors.primary, fontWeight: 'bold', marginTop: 4 }}>
+                      {err}
+                    </Text>
+                  );
+                }
+                return null;
+              })()}
             </View>
             {/* Banco */}
             <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
