@@ -22,6 +22,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { createTipPixPayment, getTipStatus, TipPixResponse } from '@shared/services/paymentService';
 import Toast from 'react-native-toast-message';
+import { TIP_FEE_MESSAGE } from '@shared/constants/fees';
 
 const MIN_TIP_AMOUNT = 10;
 const POLLING_INTERVAL_MS = 3000;
@@ -457,7 +458,7 @@ export function TipAfterSessionScreen() {
           )}
 
           <Text style={styles.platformTaxInfo}>
-            Seu Pix vai direto para a carteira de {supporterName} (MeuBest retém apenas 15% de taxa de serviço para cobrir taxas do intermediador e manutenção).
+            {TIP_FEE_MESSAGE}
           </Text>
 
           {/* Botão de envio */}

@@ -29,7 +29,7 @@ export interface WalletSummary {
 export interface Transaction {
   id: string;
   userId: string;
-  type: 'tip_sent' | 'tip_received' | 'total_fee' | 'gateway_fee' | 'platform_net_fee' | 'withdrawal' | 'refund';
+  type: 'tip_sent' | 'tip_received' | 'total_fee' | 'gateway_fee' | 'platform_net_fee' | 'platform_fee' | 'withdrawal' | 'refund';
   amount: number;
   currency: 'BRL';
   status: 'pending' | 'paid' | 'failed' | 'canceled';

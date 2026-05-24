@@ -25,6 +25,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
+import { TIP_FEE_MESSAGE } from '@shared/constants/fees';
 
 const TOPICS = [
   { id: 'relacionamento', label: 'RELACIONAMENTO' },
@@ -192,7 +193,7 @@ export function ProfileScreen() {
                   <Info size={20} color={colors.primary} />
                 </View>
                 <Text style={styles.infoText}>
-                  O MeuBest retém uma taxa de <Text style={styles.infoHighlight}>15%</Text> sobre as gorjetas para manutenção da plataforma.
+                  {TIP_FEE_MESSAGE}
                 </Text>
               </View>
 
