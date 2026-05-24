@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     color: colors.textMutedValue,
   },
 
-  // Card Info Taxa (15%)
+
   infoCard: {
     flexDirection: 'row',
     backgroundColor: colors.background,

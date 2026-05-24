@@ -17,6 +17,7 @@ module.exports = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: IS_DEV ? 'br.com.meubest.app.dev' : 'br.com.meubest.app',
+    buildNumber: '1.0.0',
     infoPlist: {
       NSCameraUsageDescription: 'Meu Best usa sua câmera para sessões de apoio em vídeo.',
       NSMicrophoneUsageDescription: 'Meu Best usa seu microfone para sessões de apoio em áudio/vídeo.',
@@ -31,6 +32,7 @@ module.exports = {
       backgroundColor: '#FDF8F5',
     },
     package: IS_DEV ? 'br.com.meubest.app.dev' : 'br.com.meubest.app',
+    versionCode: 1,
     googleServicesFile: './google-services.json',
     permissions: [
       'android.permission.CAMERA',
