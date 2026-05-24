@@ -59,6 +59,7 @@ export type ProfileStackParamList = {
 // ─── Root ─────────────────────────────────────────────────────────
 export type RootStackParamList = {
   Auth: undefined;
+  ProfileForm: undefined;
   App: undefined;
   Session: { sessionId: string }; // Modal
 };

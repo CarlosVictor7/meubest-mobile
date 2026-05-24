@@ -43,4 +43,6 @@ export interface UserProfile {
   bankDetails?: BankDetails;
   photoURL?: string;
   createdAt?: string;
+  updatedAt?: string;
+  isAdult?: boolean;
 }

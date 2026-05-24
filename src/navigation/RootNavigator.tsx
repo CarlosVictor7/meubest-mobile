@@ -7,6 +7,7 @@ import { AuthNavigator } from './AuthNavigator';
 import { AppTabNavigator } from './AppTabNavigator';
 import { SessionNavigator } from './SessionNavigator';
 import type { RootStackParamList } from './types';
+import { ProfileFormScreen } from '../features/auth/screens/ProfileFormScreen';
 import { colors } from '@constants/theme';
 
 const Root = createNativeStackNavigator<RootStackParamList>();
@@ -14,8 +15,9 @@ const Root = createNativeStackNavigator<RootStackParamList>();
 export function RootNavigator() {
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
+  const profile = useAuthStore((s) => s.profile);
 
-  if (loading) {
+  if (loading || (isAuthenticated && !profile)) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -26,7 +28,11 @@ export function RootNavigator() {
   return (
     <NavigationContainer>
       <Root.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? (
+        {!isAuthenticated ? (
+          <Root.Screen name="Auth" component={AuthNavigator} />
+        ) : (!profile || profile.isProfileComplete !== true) ? (
+          <Root.Screen name="ProfileForm" component={ProfileFormScreen} />
+        ) : (
           <>
             <Root.Screen name="App" component={AppTabNavigator} />
             <Root.Screen 
@@ -35,8 +41,6 @@ export function RootNavigator() {
               options={{ presentation: 'fullScreenModal' }}
             />
           </>
-        ) : (
-          <Root.Screen name="Auth" component={AuthNavigator} />
         )}
       </Root.Navigator>
     </NavigationContainer>

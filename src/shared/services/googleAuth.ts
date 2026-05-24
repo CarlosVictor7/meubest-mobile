@@ -82,6 +82,8 @@ export async function signInWithGoogle(
         role,
         isOnline: role === 'listener',
         createdAt: serverTimestamp() as any,
+        updatedAt: serverTimestamp() as any,
+        isProfileComplete: false,
         points: 0,
         level: 1,
         gratitudeCoins: 0,
