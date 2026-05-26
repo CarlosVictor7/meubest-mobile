@@ -50,3 +50,6 @@ yarn-error.*
 
 # Expo telemetria
 .expo-shared/
+
+# Credenciais Locais (EAS Keystore)
+credentials.json

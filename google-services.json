@@ -58,6 +58,50 @@
       },
       "oauth_client": [
         {
+          "client_id": "665557596754-b3h6oghh21mk9qdvqldu37lj4e79s5gj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.meubest.app.dev",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5WsPy27utcS0DOw40kUOJKUf15y1QRFw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "665557596754-56d27ol8c022b0j7kdlnhte5c568nel0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "host.exp.exponent"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:665557596754:android:a61e4372d84722e2273d8b",
+        "android_client_info": {
+          "package_name": "meu.best"
+        }
+      },
+      "oauth_client": [
+        {
           "client_id": "665557596754-q7vo61f0vronp2ddtaqljdp4cpc04rtt.apps.googleusercontent.com",
           "client_type": 3
         }
