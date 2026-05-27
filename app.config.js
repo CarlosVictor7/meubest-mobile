@@ -32,7 +32,7 @@ module.exports = {
       backgroundColor: '#FDF8F5',
     },
     package: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    versionCode: 2,
+    versionCode: 3,
     googleServicesFile: './google-services.json',
     permissions: [
       'android.permission.CAMERA',
