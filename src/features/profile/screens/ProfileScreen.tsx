@@ -209,16 +209,6 @@ export function ProfileScreen() {
                 />
               </View>
 
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>INSTITUIÇÃO BANCÁRIA</Text>
-                <TextInput
-                  style={styles.input}
-                  value={bankName}
-                  onChangeText={setBankName}
-                  placeholder="Ex: Nubank, Itaú, Bradesco..."
-                  placeholderTextColor={colors.textMutedValue}
-                />
-              </View>
             </View>
 
             {/* ─── MEUS TEMAS DE INTERESSE ───────────────────────────── */}

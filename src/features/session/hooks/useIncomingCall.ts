@@ -61,6 +61,12 @@ export function useIncomingCall(
   // Ref de timeouts pendentes para limpeza no unmount
   const pendingTimeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Referência mutável do profile para contornar stale closure sem recriar o listener do Firebase
+  const profileRef = useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
   // ─── Listener de chamados pendentes ────────────────────────────────────────
   useEffect(() => {
     // Só ativa para apoiadores (listener) online
@@ -128,7 +134,7 @@ export function useIncomingCall(
 
         const hasCompatibleInterest =
           themeId !== undefined &&
-          (profile.interests ?? []).includes(themeId);
+          (profileRef.current?.interests ?? []).includes(themeId);
 
         console.log(
           `[IncomingCall] compatible session: ${session.id} | theme: ${session.category} | match: ${hasCompatibleInterest}`

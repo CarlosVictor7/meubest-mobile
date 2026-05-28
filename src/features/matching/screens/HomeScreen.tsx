@@ -23,7 +23,10 @@ import {
   StatusBar,
   TouchableOpacity,
   Share,
+  Alert,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { SESSION_THEMES } from '@constants/config';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bell,
@@ -80,6 +83,11 @@ export function HomeScreen() {
   const [sessions, setSessions] = useState<any[]>([]);
   // Estado do modal de seleção de tema (card "Início Rápido")
   const [startModalVisible, setStartModalVisible] = useState(false);
+
+  // Estados para o Card de Temas que você apoia (Task 10)
+  const [isEditingThemes, setIsEditingThemes] = useState(false);
+  const [editableInterests, setEditableInterests] = useState<string[]>([]);
+  const [isSavingThemes, setIsSavingThemes] = useState(false);
 
 
   const isListener = profile?.role === 'listener';
@@ -145,6 +153,50 @@ export function HomeScreen() {
       setIsOnline(!value);
     }
   };
+
+  // ── Temas de Apoio (Task 10) ──────────────────────────────────────
+  const handleToggleTheme = useCallback((themeId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setEditableInterests((prev) =>
+      prev.includes(themeId) ? prev.filter((id) => id !== themeId) : [...prev, themeId]
+    );
+  }, []);
+
+  const handleStartEditThemes = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Aceita aliases antigos por segurança
+    const topics = profile?.interests || (profile as any)?.selectedTopics || (profile as any)?.temasInteresse || [];
+    setEditableInterests(topics);
+    setIsEditingThemes(true);
+  }, [profile]);
+
+  const handleCancelEditThemes = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsEditingThemes(false);
+    setEditableInterests([]);
+  }, []);
+
+  const handleSaveThemes = useCallback(async () => {
+    if (!user?.uid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsSavingThemes(true);
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        interests: editableInterests,
+      });
+      setIsEditingThemes(false);
+      Alert.alert('Sucesso', 'Temas de apoio atualizados com sucesso!');
+    } catch (err) {
+      console.error('[HomeScreen] Erro ao salvar temas:', err);
+      Alert.alert('Erro', 'Não foi possível salvar os temas. Tente novamente.');
+    } finally {
+      setIsSavingThemes(false);
+    }
+  }, [user?.uid, editableInterests]);
+
+  const hasThemeChanges = isEditingThemes && 
+    JSON.stringify([...editableInterests].sort()) !== JSON.stringify([...(profile?.interests || (profile as any)?.selectedTopics || (profile as any)?.temasInteresse || [])].sort());
 
   // NOTA: handleRoleChange foi removido desta tela.
   // A lógica de troca de papel (Ouvir/Apoiar) e persistência de isOnline
@@ -341,6 +393,94 @@ export function HomeScreen() {
               </>
             )}
           </View>
+
+          {/* ═══════════════════════════════════════════════════════
+              6.5. CARD TEMAS QUE VOCÊ APOIA (Apenas modo Apoiar)
+          ═══════════════════════════════════════════════════════ */}
+          {isListener && (
+            <View style={[styles.themesCard, shadows.sm]}>
+              <View style={styles.themesHeader}>
+                <View style={styles.themesHeaderIconWrap}>
+                  <Flame size={20} color={colors.primary} strokeWidth={2} />
+                </View>
+                <Text style={styles.themesTitle}>TEMAS QUE VOCÊ APOIA</Text>
+              </View>
+              <Text style={styles.themesSubtitle}>
+                Escolha os assuntos em que você se sente preparado para acolher na rede.
+              </Text>
+
+              {isEditingThemes ? (
+                // ─── ESTADO EDIÇÃO ───
+                <>
+                  <View style={styles.themesGrid}>
+                    {SESSION_THEMES.map((theme) => {
+                      const isSelected = editableInterests.includes(theme.id);
+                      return (
+                        <TouchableOpacity
+                          key={theme.id}
+                          activeOpacity={0.8}
+                          onPress={() => handleToggleTheme(theme.id)}
+                          style={[styles.themePill, isSelected && styles.themePillActive]}
+                        >
+                          <Text style={[styles.themePillText, isSelected && styles.themePillTextActive]}>
+                            {theme.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.themesActions}>
+                    <TouchableOpacity
+                      style={styles.btnCancelThemes}
+                      onPress={handleCancelEditThemes}
+                      disabled={isSavingThemes}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.btnCancelThemesText}>CANCELAR</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.btnSaveThemes,
+                        (!hasThemeChanges || isSavingThemes) && styles.btnSaveThemesDisabled,
+                      ]}
+                      onPress={handleSaveThemes}
+                      disabled={!hasThemeChanges || isSavingThemes}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.btnSaveThemesText}>
+                        {isSavingThemes ? 'SALVANDO...' : 'SALVAR'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                // ─── ESTADO LEITURA ───
+                <>
+                  <View style={styles.themesGrid}>
+                    {profile?.interests && profile.interests.length > 0 ? (
+                      SESSION_THEMES.filter((t) => (profile.interests ?? []).includes(t.id)).map((theme) => (
+                        <View key={theme.id} style={[styles.themePill, styles.themePillRead]}>
+                          <Text style={styles.themePillTextRead}>{theme.label}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noThemesText}>Nenhum tema selecionado ainda.</Text>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.btnEditThemes}
+                    onPress={handleStartEditThemes}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnEditThemesText}>EDITAR TEMAS</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
           {/* ═══════════════════════════════════════════════════════
               7. BLACK CARD — Indique um Amigo
@@ -774,6 +914,143 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     fontWeight: typography.weight.black,
     color: colors.dark ?? '#1A1A1A',
+    letterSpacing: typography.tracking.wider,
+  },
+
+  // ── Temas que você apoia Card (Task 10) ──
+  themesCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 3,
+    borderColor: colors.primaryLight,
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  themesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  themesHeaderIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  themesTitle: {
+    fontSize: typography.size.xxl - 2,
+    fontWeight: typography.weight.black,
+    color: colors.text,
+    letterSpacing: typography.tracking.tight,
+  },
+  themesSubtitle: {
+    fontSize: typography.size.xs + 1,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
+    marginBottom: spacing.xs,
+  },
+  themesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginVertical: spacing.xs,
+  },
+  themePill: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm - 2,
+  },
+  themePillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    ...shadows.sm,
+  },
+  themePillRead: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primaryLight,
+  },
+  themePillText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    letterSpacing: 0.5,
+  },
+  themePillTextActive: {
+    color: colors.textInverted,
+  },
+  themePillTextRead: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  noThemesText: {
+    fontSize: typography.size.sm,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.bold,
+    fontStyle: 'italic',
+    paddingVertical: spacing.xs,
+  },
+  themesActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  btnCancelThemes: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    paddingVertical: spacing.md - 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnCancelThemesText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: typography.tracking.wider,
+  },
+  btnSaveThemes: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md - 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.primary,
+  },
+  btnSaveThemesDisabled: {
+    backgroundColor: colors.primaryLight,
+    borderColor: 'transparent',
+    opacity: 0.6,
+  },
+  btnSaveThemesText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: typography.tracking.wider,
+  },
+  btnEditThemes: {
+    backgroundColor: colors.dark ?? '#1A1A1A',
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md - 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    ...shadows.sm,
+  },
+  btnEditThemesText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
     letterSpacing: typography.tracking.wider,
   },
 });

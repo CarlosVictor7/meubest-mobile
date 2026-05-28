@@ -20,11 +20,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, X, ShieldCheck } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { Avatar, NoticeCard, SegmentedControl } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
+import { EvolutionModal } from '@features/gamification/components/EvolutionModal';
 
 // Chave de persistência da preferência Online do modo Apoiar
 const LISTENER_ONLINE_PREF_KEY = '@meubest:listenerOnlinePreference';
@@ -89,11 +91,48 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
   const [isOnline, setIsOnline]     = useState(profile?.isOnline ?? false);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
+  // Estados para as notificações (Task 8)
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Estado para o modal de Evolução (Task 11)
+  const [evolutionVisible, setEvolutionVisible] = useState(false);
+
   // Sincroniza quando o profile do Firestore chegar
   useEffect(() => {
     if (profile?.role)    setActiveRole(profile.role);
     if (profile?.isOnline !== undefined) setIsOnline(profile.isOnline);
   }, [profile?.role, profile?.isOnline]);
+
+  // Listener para contar notificações não lidas (Task 8)
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    console.log(`[TabHeader] listening unread notifications count for: ${user.uid}`);
+
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const count = snap.docs.filter((d) => !d.data().read).length;
+        setUnreadCount(count);
+      },
+      (error) => {
+        console.error('[TabHeader] error listening notifications:', error);
+      }
+    );
+
+    return () => unsub();
+  }, [user]);
 
   const isListener = activeRole === 'listener';
 
@@ -189,12 +228,33 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
 
           {/* Stats inline + Sino */}
           <View style={styles.headerRight}>
-            <View style={styles.miniStats}>
+            <TouchableOpacity
+              style={styles.miniStats}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setEvolutionVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
               <Text style={styles.miniStat}>🔥 {streak}</Text>
               <Text style={styles.miniStat}>🪙 {coins}</Text>
-            </View>
-            <TouchableOpacity style={styles.bellBtn}>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.bellBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setNotificationsVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
               <Bell size={18} color={colors.text} strokeWidth={2} />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -308,6 +368,18 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <NotificationsModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+        userId={user?.uid ?? ''}
+      />
+
+      <EvolutionModal
+        visible={evolutionVisible}
+        onClose={() => setEvolutionVisible(false)}
+        profile={profile}
+      />
     </>
   );
 }
@@ -443,6 +515,27 @@ const styles = StyleSheet.create({
   // Modo Ouvir: NoticeCard mais próximo do segmented (sem espaço vazio da chave)
   noticeWrapOuvir: {
     paddingTop: spacing.lg,
+  },
+  // Badge de notificações (Task 8)
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+  },
+  badgeText: {
+    fontSize: 8,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    textAlign: 'center',
   },
 });
 

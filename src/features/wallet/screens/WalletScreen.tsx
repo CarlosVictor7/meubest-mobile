@@ -142,7 +142,8 @@ export function WalletScreen() {
     if (!canWithdraw) return;
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal({ amount: withdrawAmount, pixKey, pixKeyType, bankName });
+      // Remover bankName do payload de saque no mobile (Task 12A)
+      await requestWithdrawal({ amount: withdrawAmount, pixKey, pixKeyType });
       Alert.alert('Sucesso', 'Saque solicitado com sucesso!');
       setWithdrawModal(false);
       setWithdrawAmountStr('');
@@ -155,8 +156,8 @@ export function WalletScreen() {
   };
 
   const handleSaveBank = async () => {
-    if (!pixKey.trim() || !bankName.trim()) {
-      Alert.alert('Campos obrigatórios', 'Preencha a chave PIX e o banco.');
+    if (!pixKey.trim()) {
+      Alert.alert('Chave PIX obrigatória', 'Preencha a chave PIX.');
       return;
     }
     const validationError = getPixValidationError(pixKeyType, pixKey);
@@ -316,10 +317,12 @@ export function WalletScreen() {
                   <Text style={s.pendingLabel}>Chave PIX</Text>
                   <Text style={s.pendingVal}>{maskPixKey(pixKeyUsed, detectPixKeyType(pixKeyUsed))}</Text>
                 </View>
-                <View style={[s.pendingFooterRow, { marginTop: 4 }]}>
-                  <Text style={s.pendingLabel}>Banco</Text>
-                  <Text style={s.pendingVal}>{bankNameUsed}</Text>
-                </View>
+                {bankNameUsed && bankNameUsed !== '-' && (
+                  <View style={[s.pendingFooterRow, { marginTop: 4 }]}>
+                    <Text style={s.pendingLabel}>Banco</Text>
+                    <Text style={s.pendingVal}>{bankNameUsed}</Text>
+                  </View>
+                )}
               </View>
             </View>
           );
@@ -464,17 +467,7 @@ export function WalletScreen() {
                 return null;
               })()}
             </View>
-            {/* Banco */}
-            <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
-              <Text style={s.fieldLabel}>BANCO (Opcional)</Text>
-              <TextInput
-                style={s.input}
-                placeholder="Nome do seu banco"
-                placeholderTextColor={colors.textMutedValue}
-                value={bankName}
-                onChangeText={setBankName}
-              />
-            </View>
+            {/* O campo Banco foi ocultado no mobile para simplificar o Pix (Task 12A) */}
             <TouchableOpacity style={[s.btnSave, { marginTop: spacing.xl }]} onPress={handleSaveBank} activeOpacity={0.85}>
               <Text style={s.btnSaveText}>SALVAR DADOS</Text>
             </TouchableOpacity>
@@ -612,7 +605,7 @@ export function WalletScreen() {
                             )}
                             {tx.type === 'withdrawal' && (
                               <Text style={{ fontSize: 10, color: colors.textMutedValue, fontWeight: 'bold' }}>
-                                Banco: {bank || '-'} | Pix: {pix ? maskPixKey(pix, detectPixKeyType(pix)) : '-'}
+                                {bank ? `Banco: ${bank} | ` : ''}Pix: {pix ? maskPixKey(pix, detectPixKeyType(pix)) : '-'}
                               </Text>
                             )}
                             {tx.metadata?.provider && (
