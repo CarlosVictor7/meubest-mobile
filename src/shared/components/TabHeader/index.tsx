@@ -19,11 +19,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, X, ShieldCheck } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { Avatar, NoticeCard, SegmentedControl } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+
+// Chave de persistência da preferência Online do modo Apoiar
+const LISTENER_ONLINE_PREF_KEY = '@meubest:listenerOnlinePreference';
 
 // ─── Opções de papel ──────────────────────────────────────────────────────────
 const ROLE_OPTIONS = [
@@ -98,12 +102,17 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
   const coins    = profile?.gratitudeCoins ?? 0;
   const streak   = profile?.currentStreak  ?? 0;
 
-  // ── Toggle Online ─────────────────────────────────────────────────
+  // ── Toggle Online ─────────────────────────────────────────────────────
+  // Salva preferência no AsyncStorage ao alternar manualmente
   const toggleOnline = useCallback(
     async (value: boolean) => {
       if (!user) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIsOnline(value);
+      // Persiste a escolha manual para o modo Apoiar
+      try {
+        await AsyncStorage.setItem(LISTENER_ONLINE_PREF_KEY, String(value));
+      } catch { /* silencia — não crítico */ }
       try {
         await updateDoc(doc(db, 'users', user.uid), { isOnline: value });
       } catch {
@@ -113,24 +122,50 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
     [user]
   );
 
-  // ── Toggle papel (Ouvir ↔ Apoiar) — local para teste ─────────────
+  // ── Toggle papel (Ouvir ↔ Apoiar) ───────────────────────────────────
+  // Ao mudar para Apoiar: lê preferência salva (ou usa true na 1ª vez)
+  // Ao mudar para Ouvir: vai offline (preferência salva permanece para próxima vez)
   const handleRoleChange = useCallback(
-    (newRole: string) => {
+    async (newRole: string) => {
       if (newRole === activeRole) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setActiveRole(newRole);
-      if (newRole === 'speaker') setIsOnline(false);
       onRoleChange?.(newRole);
-      // TODO: persistir no Firestore quando contrato confirmado
-      if (user) {
-        updateDoc(doc(db, 'users', user.uid), {
-          role: newRole,
-          isOnline: newRole === 'listener' ? isOnline : false,
-        }).catch(() => {/* silencia erro — UI já atualizada */});
+
+      if (newRole === 'listener') {
+        // Lê preferência salva no AsyncStorage
+        let preferredOnline = true; // padrão na primeira vez
+        try {
+          const saved = await AsyncStorage.getItem(LISTENER_ONLINE_PREF_KEY);
+          if (saved !== null) {
+            preferredOnline = saved === 'true';
+          } else {
+            // Primeira vez no modo Apoiar: salva o padrão true
+            await AsyncStorage.setItem(LISTENER_ONLINE_PREF_KEY, 'true');
+          }
+        } catch { /* silencia */ }
+
+        setIsOnline(preferredOnline);
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), {
+            role: 'listener',
+            isOnline: preferredOnline,
+          }).catch(() => { /* silencia — UI já atualizada */ });
+        }
+      } else {
+        // Modo Ouvir: offline — preferência do listener permanece salva
+        setIsOnline(false);
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), {
+            role: 'speaker',
+            isOnline: false,
+          }).catch(() => { /* silencia — UI já atualizada */ });
+        }
       }
     },
-    [activeRole, isOnline, user, onRoleChange]
+    [activeRole, user, onRoleChange]
   );
+
 
   return (
     <>

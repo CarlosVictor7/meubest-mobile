@@ -4,8 +4,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 // ─── Auth Stack ───────────────────────────────────────────────────
 export type AuthStackParamList = {
   Onboarding: undefined;
-  RoleSelection: undefined;
-  Login: { role?: 'speaker' | 'listener' };
+  Login: undefined;
 };
 
 // ─── App Tabs ─────────────────────────────────────────────────────

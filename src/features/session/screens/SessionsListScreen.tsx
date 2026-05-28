@@ -173,6 +173,8 @@ function SessionCard({ session }: { session: any }) {
   const handlePress = () => {
     if (status === 'active' || status === 'pending') {
       navigation.navigate('Session', { sessionId: session.id });
+    } else if (status === 'completed') {
+      navigation.navigate('SessionDetail', { sessionId: session.id });
     }
   };
 
@@ -180,8 +182,8 @@ function SessionCard({ session }: { session: any }) {
     <TouchableOpacity 
       style={card.container} 
       onPress={handlePress}
-      activeOpacity={status === 'active' || status === 'pending' ? 0.7 : 1}
-      disabled={status !== 'active' && status !== 'pending'}
+      activeOpacity={0.7}
+      disabled={status !== 'active' && status !== 'pending' && status !== 'completed'}
     >
       <View style={card.top}>
         <View style={card.iconWrap}>
@@ -208,8 +210,12 @@ function SessionCard({ session }: { session: any }) {
             <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
               <Text style={[card.detalhes, { color: colors.primary, fontWeight: '900' }]}>ENTRAR NA SALA</Text>
             </TouchableOpacity>
+          ) : status === 'completed' ? (
+            <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
+              <Text style={[card.detalhes, { color: colors.primary }]}>VER DETALHES</Text>
+            </TouchableOpacity>
           ) : (
-            <Text style={[card.detalhes, { color: colors.textMutedValue, textDecorationLine: 'none' }]}>CONCLUÍDA</Text>
+            <Text style={[card.detalhes, { color: colors.textMutedValue, textDecorationLine: 'none' }]}>CANCELADA</Text>
           )}
         </View>
         <View style={[card.badge, { backgroundColor: `${statusColor}18` }]}>

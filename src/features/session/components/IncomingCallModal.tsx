@@ -18,6 +18,7 @@ import {
 import { PhoneIncoming, X, Heart, Clock, Zap } from 'lucide-react-native';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import type { IncomingCallSession } from '../hooks/useIncomingCall';
+import { useCallRingtone } from '../hooks/useCallRingtone';
 
 interface IncomingCallModalProps {
   session: IncomingCallSession | null;
@@ -33,6 +34,9 @@ export function IncomingCallModal({
   onDecline,
 }: IncomingCallModalProps) {
   const visible = session !== null;
+
+  // ── Ringtone: toca em loop enquanto o modal está visível ────────────────────
+  useCallRingtone(visible);
 
   // ── Animação de pulso no ícone ─────────────────────────────────────────────
   const pulseAnim = useRef(new Animated.Value(1)).current;

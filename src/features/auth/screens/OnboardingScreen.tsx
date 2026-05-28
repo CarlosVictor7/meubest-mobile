@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -69,11 +70,20 @@ export function OnboardingScreen() {
     }
   ).current;
 
+  const handleFinish = async () => {
+    try {
+      await AsyncStorage.setItem('@meubest:onboarding_seen', 'true');
+    } catch (e) {
+      console.error('Error saving onboarding_seen:', e);
+    }
+    navigation.navigate('Login');
+  };
+
   const handleNext = () => {
     if (activeIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
     } else {
-      navigation.navigate('RoleSelection');
+      handleFinish();
     }
   };
 
@@ -131,7 +141,7 @@ export function OnboardingScreen() {
                   />
                   {!isLast && (
                     <TouchableOpacity
-                      onPress={() => navigation.navigate('RoleSelection')}
+                      onPress={handleFinish}
                       style={styles.skip}
                     >
                       <Text style={styles.skipText}>Pular</Text>

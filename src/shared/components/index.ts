@@ -11,4 +11,6 @@ export { SegmentedControl } from './SegmentedControl';
 export { BottomNav, BOTTOM_NAV_SCROLL_PAD, BOTTOM_NAV_BAR_HEIGHT } from './BottomNav';
 export { PlaceholderScreen } from './PlaceholderScreen';
 export { TabHeader } from './TabHeader';
+export { StartModal } from './StartModal';
 export type { BottomNavTab } from './BottomNav';
+

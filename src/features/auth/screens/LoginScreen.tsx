@@ -1,14 +1,14 @@
 /**
- * LoginScreen — Tela de autenticação
+ * LoginScreen — Tela única de autenticação do Meu Best
  *
- * Fluxo de auth:
- * 1. Botão principal: "Continuar com Google"
- *    - Se Expo Go: mostra alert amigável explicando que precisa de development build
- *    - Se Dev Build: executa Google Sign-In real
- * 2. E-mail/Senha: APENAS se EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN === 'true'
- *    - Toggle discreto para não confundir usuário real
+ * Fluxo simplificado:
+ * - Usuário abre o app → vê esta tela
+ * - Único método: "Continuar com Google"
+ * - role padrão: 'speaker' (pode ser alterado depois na home)
+ * - Usuário existente: mantém perfil salvo no Firestore
+ * - Novo usuário: cria perfil mínimo com role='speaker'
  */
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -16,108 +16,66 @@ import {
   Alert,
   StatusBar,
   TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, MessageCircle, Heart, Globe } from 'lucide-react-native';
+import { Heart, MessageCircle, Shield } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@shared/services/firebase';
 import { signInWithGoogle } from '@shared/services/googleAuth';
-import { appConfig } from '@constants/appConfig';
-import type { AuthStackParamList } from '@navigation/types';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-import { Button } from '@shared/components';
-import type { UserProfile } from '@models/user';
 
 // Necessário para fechar o browser ao retornar ao app
 WebBrowser.maybeCompleteAuthSession();
 
-type RouteProps = RouteProp<AuthStackParamList, 'Login'>;
-type Nav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+// ─── Ícone Google SVG inline (sem dependência externa) ───────────────
+function GoogleIcon() {
+  return (
+    <View style={gIcon.wrap}>
+      <Text style={gIcon.text}>G</Text>
+    </View>
+  );
+}
 
-// ─── Flag de dev — email/senha visível apenas em dev build com env var ──────
-const DEV_EMAIL_LOGIN_ENABLED =
-  process.env.EXPO_PUBLIC_ENABLE_DEV_EMAIL_LOGIN === 'true';
-
-
-// ─── Conteúdo contextual por papel ──────────────────────────────────────────
-const ROLE_CONTENT = {
-  speaker: {
-    badge: 'Quero ser ouvido',
-    badgeBg: `${colors.primary}18`,
-    badgeColor: colors.primary,
-    Icon: MessageCircle,
-    iconBg: `${colors.primary}12`,
-    iconColor: colors.primary,
-    illustrationGradient: [colors.background, '#FFE8DC'] as [string, string],
-    headline: 'Você deu o\nprimeiro passo.',
-    subheadline:
-      'Conectamos você a alguém que já passou pelo que você está vivendo — presente, sem julgamento.',
-    switchLabel: 'Na verdade, quero apoiar alguém →',
-    switchRole: 'listener' as const,
-    motivational: '🤍  Você não está sozinho. Estamos aqui.',
+const gIcon = StyleSheet.create({
+  wrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  listener: {
-    badge: 'Quero apoiar alguém',
-    badgeBg: '#E8F5E9',
-    badgeColor: '#388E3C',
-    Icon: Heart,
-    iconBg: '#E8F5E9',
-    iconColor: '#388E3C',
-    illustrationGradient: ['#F0FFF4', '#E8F5E9'] as [string, string],
-    headline: 'A comunidade\nprecisa de você.',
-    subheadline:
-      'Sua experiência tem valor. Cada conversa que você oferece muda a trajetória de alguém.',
-    switchLabel: 'Na verdade, preciso ser ouvido →',
-    switchRole: 'speaker' as const,
-    motivational: '💚  Seu tempo e presença são um presente.',
+  text: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: -0.5,
   },
-} as const;
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
-  const navigation = useNavigation<Nav>();
-  const route = useRoute<RouteProps>();
-  const role = route.params?.role ?? 'speaker';
-  const content = ROLE_CONTENT[role];
-
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showDevEmailForm, setShowDevEmailForm] = useState(false);
+  const [status, setStatus]   = useState('');
 
-  // ── Botão "Continuar com Google" ──────────────────────────────────
+  // ── Login Google ─────────────────────────────────────────────────
   const handleGooglePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     setLoading(true);
-    setStatus('Autenticando...');
-    
-    const result = await signInWithGoogle(role);
+    setStatus('Autenticando…');
+
+    // role padrão 'speaker' — usuário existente mantém o próprio role
+    const result = await signInWithGoogle('speaker');
 
     if (result.type === 'expoGoLimitation') {
       setLoading(false);
       setStatus('');
       Alert.alert(
         'Google Sign-In Nativo',
-        'O login com Google requer um Development Build (EAS).\n\nPara testes rápidos, use e-mail e senha abaixo. Para testar o fluxo Google real, gere um build com:\n\neas build --profile development',
-        [
-          { text: 'Entendi', style: 'default' },
-          {
-            text: 'Usar e-mail',
-            onPress: () => setShowDevEmailForm(true),
-          },
-        ]
+        'O login com Google requer um Development Build (EAS).\n\nGere um build com:\n\neas build --profile development',
+        [{ text: 'Entendi', style: 'default' }]
       );
       return;
     }
@@ -135,38 +93,8 @@ export function LoginScreen() {
       return;
     }
 
-    // Success - o AuthProvider cuidará da mudança de estado e navegação
+    // Success — RootNavigator cuida da transição de estado automaticamente
     setStatus('');
-  };
-
-  // ── Email/Senha (dev only) ─────────────────────────────────────────
-  const handleEmailLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Campos obrigatórios', 'Preencha e-mail e senha.');
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setLoading(true);
-    setStatus('Entrando...');
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setStatus('');
-    } catch (error: any) {
-      console.error('[LoginScreen] Email login error:', error);
-      setStatus('');
-      setLoading(false);
-      Alert.alert('Erro ao entrar', 'E-mail ou senha incorretos.', [{ text: 'OK' }]);
-    }
-  };
-
-  const handleBack = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.goBack();
-  };
-
-  const handleSwitch = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.replace('Login', { role: content.switchRole });
   };
 
   // ─── Render ─────────────────────────────────────────────────────────
@@ -174,125 +102,94 @@ export function LoginScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
-      <LinearGradient colors={[colors.background, '#FFF5EF']} style={styles.gradient}>
+      <LinearGradient
+        colors={[colors.background, '#FFF5EF', '#FFF9F6']}
+        style={styles.gradient}
+      >
         <SafeAreaView style={styles.safe}>
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bounces={false}
           >
 
-            {/* ─── Top bar ──────────────────────────────────────────── */}
-            <View style={styles.topBar}>
-              <TouchableOpacity onPress={handleBack} style={styles.backBtn} activeOpacity={0.7}>
-                <ChevronLeft size={24} color={colors.text} strokeWidth={2.5} />
-              </TouchableOpacity>
-
-              <View style={[styles.badge, { backgroundColor: content.badgeBg }]}>
-                <content.Icon size={13} color={content.badgeColor} strokeWidth={2.5} />
-                <Text style={[styles.badgeText, { color: content.badgeColor }]}>
-                  {content.badge}
-                </Text>
-              </View>
-
-              <View style={{ width: 40 }} />
+            {/* ─── Branding ─────────────────────────────────────────── */}
+            <View style={styles.brand}>
+              <Text style={styles.logo}>Meu Best</Text>
+              <Text style={styles.tagline}>Você não está sozinho.</Text>
             </View>
 
-            {/* ─── Ilustração ───────────────────────────────────────── */}
-            <LinearGradient colors={content.illustrationGradient} style={styles.illustration}>
-              <View style={[styles.illustrationIcon, { backgroundColor: content.iconBg }]}>
-                <content.Icon size={40} color={content.iconColor} strokeWidth={1.8} />
+            {/* ─── Ilustração / Hero ────────────────────────────────── */}
+            <LinearGradient
+              colors={[colors.primaryLight, '#FFE8DC']}
+              style={styles.hero}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {/* Decorative background circles */}
+              <View style={styles.heroBgCircle1} />
+              <View style={styles.heroBgCircle2} />
+
+              {/* Ícones flutuantes */}
+              <View style={styles.heroIcons}>
+                <View style={[styles.iconBubble, styles.iconBubbleLg]}>
+                  <Heart size={30} color={colors.primary} strokeWidth={1.8} fill={`${colors.primary}22`} />
+                </View>
+                <View style={[styles.iconBubble, styles.iconBubbleMd, { marginTop: -20 }]}>
+                  <MessageCircle size={22} color={colors.primary} strokeWidth={2} />
+                </View>
+                <View style={[styles.iconBubble, styles.iconBubbleSm, { marginTop: 8 }]}>
+                  <Shield size={16} color={colors.primary} strokeWidth={2} />
+                </View>
               </View>
-              <Text style={styles.motivational}>{content.motivational}</Text>
+
+              <Text style={styles.heroText}>
+                Conectamos você a alguém que já{'\n'}
+                passou pelo que você está vivendo{'\n'}
+                — presente, sem julgamento.
+              </Text>
             </LinearGradient>
 
-            {/* ─── Headline ─────────────────────────────────────────── */}
-            <View style={styles.textBlock}>
-              <Text style={styles.headline}>{content.headline}</Text>
-              <Text style={styles.subheadline}>{content.subheadline}</Text>
-            </View>
-
             {/* ─── Ações ────────────────────────────────────────────── */}
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.actions}
-            >
-              {/* Botão PRINCIPAL — Google */}
-              {!showDevEmailForm && (
-                <TouchableOpacity
-                  onPress={handleGooglePress}
-                  style={[styles.googleBtn, shadows.primary]}
-                  activeOpacity={0.85}
-                  disabled={loading}
-                >
-                  <View style={styles.googleIconWrap}>
-                    <Globe size={22} color={colors.textInverted} />
-                  </View>
-                  <Text style={styles.googleBtnText}>
-                    {loading ? (status || 'Aguarde...') : 'Continuar com Google'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+            <View style={styles.actions}>
 
-              {/* Formulário email/senha — dev only */}
-              {(DEV_EMAIL_LOGIN_ENABLED || showDevEmailForm) && (
-                <View style={styles.emailSection}>
-                  {!showDevEmailForm ? (
-                    // Toggle discreto (só quando flag dev ativa)
-                    <TouchableOpacity
-                      onPress={() => setShowDevEmailForm(true)}
-                      style={styles.devToggle}
-                    >
-                      <Text style={styles.devToggleText}>Entrar com e-mail</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    // Formulário completo
-                    <View style={styles.emailForm}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="E-mail"
-                        placeholderTextColor={colors.textMutedValue}
-                        value={email}
-                        onChangeText={setEmail}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                        autoCorrect={false}
-                        editable={!loading}
-                      />
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Senha"
-                        placeholderTextColor={colors.textMutedValue}
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry
-                        editable={!loading}
-                      />
-                      <Button
-                        label={loading ? (status || 'Aguarde...') : 'Entrar'}
-                        onPress={handleEmailLogin}
-                        size="lg"
-                        fullWidth
-                        loading={loading}
-                        style={shadows.primary}
-                      />
-                      <TouchableOpacity
-                        onPress={() => setShowDevEmailForm(false)}
-                        style={styles.switchBtn}
-                        activeOpacity={0.65}
-                      >
-                        <Text style={styles.switchText}>← Voltar ao Google</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Trocar papel */}
-              <TouchableOpacity onPress={handleSwitch} activeOpacity={0.65} style={styles.switchBtn}>
-                <Text style={styles.switchText}>{content.switchLabel}</Text>
+              {/* Botão principal Google */}
+              <TouchableOpacity
+                onPress={handleGooglePress}
+                style={[styles.googleBtn, loading && styles.googleBtnLoading, shadows.primary]}
+                activeOpacity={0.85}
+                disabled={loading}
+              >
+                <GoogleIcon />
+                <Text style={styles.googleBtnText}>
+                  {loading ? (status || 'Aguarde…') : 'Continuar com Google'}
+                </Text>
               </TouchableOpacity>
-            </KeyboardAvoidingView>
+
+              {/* Separador decorativo */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>acesso gratuito</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Trust badges */}
+              <View style={styles.trustRow}>
+                <View style={styles.trustBadge}>
+                  <Text style={styles.trustEmoji}>🔒</Text>
+                  <Text style={styles.trustText}>100% seguro</Text>
+                </View>
+                <View style={styles.trustBadge}>
+                  <Text style={styles.trustEmoji}>💛</Text>
+                  <Text style={styles.trustText}>Voluntários reais</Text>
+                </View>
+                <View style={styles.trustBadge}>
+                  <Text style={styles.trustEmoji}>✨</Text>
+                  <Text style={styles.trustText}>Gratuito</Text>
+                </View>
+              </View>
+            </View>
 
             {/* ─── Rodapé ───────────────────────────────────────────── */}
             <View style={styles.footer}>
@@ -304,7 +201,7 @@ export function LoginScreen() {
 
               <View style={styles.safetyBox}>
                 <Text style={styles.safetyText}>
-                  🤝  O Meu Best é uma rede de apoio voluntário — não substitui atendimento
+                  🤝{'  '}O Meu Best é uma rede de apoio voluntário — não substitui atendimento
                   profissional. Em crise:{' '}
                   <Text style={styles.safetyHighlight}>CVV 188</Text> ou{' '}
                   <Text style={styles.safetyHighlight}>SAMU 192</Text>.
@@ -321,105 +218,104 @@ export function LoginScreen() {
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root:     { flex: 1 },
   gradient: { flex: 1 },
-  safe: { flex: 1 },
-  scrollContent: {
+  safe:     { flex: 1 },
+  scroll: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
-  topBar: {
-    flexDirection: 'row',
+
+  // ── Branding
+  brand: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.xl + 4,
+    paddingBottom: spacing.lg,
+    gap: spacing.xs,
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
+  logo: {
+    fontSize: 42,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: -1,
   },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: typography.weight.bold,
-    letterSpacing: 0.1,
-  },
-  illustration: {
-    borderRadius: borderRadius.xl,
-    paddingVertical: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  illustrationIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  motivational: {
-    fontSize: typography.size.sm,
+  tagline: {
+    fontSize: typography.size.md,
     color: colors.textMutedValue,
     fontWeight: typography.weight.semibold,
-    textAlign: 'center',
+    letterSpacing: 0.2,
   },
-  textBlock: {
-    gap: spacing.sm,
+
+  // ── Hero card
+  hero: {
+    borderRadius: borderRadius.xxl ?? 28,
+    padding: spacing.xl,
     marginBottom: spacing.xl,
+    overflow: 'hidden',
+    alignItems: 'center',
+    gap: spacing.lg,
+    ...shadows.sm,
   },
-  headline: {
-    fontSize: 34,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-    letterSpacing: -0.8,
-    lineHeight: 40,
+  heroBgCircle1: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: `${colors.primary}10`,
   },
-  subheadline: {
-    fontSize: typography.size.base,
+  heroBgCircle2: {
+    position: 'absolute',
+    bottom: -30,
+    left: -30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: `${colors.primary}08`,
+  },
+  heroIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  iconBubble: {
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  iconBubbleLg: { width: 64, height: 64 },
+  iconBubbleMd: { width: 48, height: 48 },
+  iconBubbleSm: { width: 36, height: 36 },
+  heroText: {
+    fontSize: typography.size.sm,
     color: colors.textMutedValue,
-    lineHeight: 22,
+    textAlign: 'center',
+    lineHeight: 20,
     fontWeight: typography.weight.medium,
   },
+
+  // ── Ações
   actions: {
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-
-  // ── Botão Google (principal)
   googleBtn: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.full,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.md + 2,
+    paddingVertical: spacing.md + 4,
     paddingHorizontal: spacing.xl,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  googleIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  googleBtnLoading: {
+    opacity: 0.75,
   },
   googleBtnText: {
     fontSize: typography.size.md,
@@ -429,40 +325,53 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // ── Email (dev only)
-  emailSection: { gap: spacing.sm },
-  devToggle: {
-    alignSelf: 'center',
-    paddingVertical: spacing.xs,
+  // ── Divisor
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginVertical: spacing.xs,
   },
-  devToggleText: {
-    fontSize: typography.size.sm,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    fontSize: 10,
+    fontWeight: typography.weight.bold,
     color: colors.textMutedValue,
-    fontWeight: typography.weight.semibold,
-    textDecorationLine: 'underline',
-  },
-  emailForm: { gap: spacing.md },
-  input: {
-    height: 52,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    fontSize: typography.size.base,
-    color: colors.text,
-    fontWeight: typography.weight.medium,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
 
-  // ── Misc
-  switchBtn: { alignSelf: 'center', paddingVertical: spacing.xs },
-  switchText: {
-    fontSize: typography.size.sm,
-    color: colors.primary,
-    fontWeight: typography.weight.semibold,
-    textDecorationLine: 'underline',
-    textDecorationColor: `${colors.primary}60`,
+  // ── Trust badges
+  trustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
+  trustBadge: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    gap: 4,
+  },
+  trustEmoji: { fontSize: 18 },
+  trustText: {
+    fontSize: 9,
+    fontWeight: typography.weight.bold,
+    color: colors.textMutedValue,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+
+  // ── Rodapé
   footer: { gap: spacing.sm },
   terms: {
     fontSize: 11,

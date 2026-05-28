@@ -45,7 +45,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '@navigation/types';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
-import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
+import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD, StartModal } from '@shared/components';
 import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary } from '@shared/services/paymentService';
@@ -78,7 +78,9 @@ export function HomeScreen() {
   const { user, profile } = useAuth();
   const [isOnline, setIsOnline] = useState(profile?.isOnline ?? false);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  // Estado do modal de seleção de tema (card "Início Rápido")
+  const [startModalVisible, setStartModalVisible] = useState(false);
+
 
   const isListener = profile?.role === 'listener';
   const name = profile?.name?.split(' ')[0] ?? 'amigo(a)';
@@ -133,6 +135,7 @@ export function HomeScreen() {
   }, [user, profile?.role]);
 
   // ── Toggle Online ─────────────────────────────────────────────────
+  // Mantido para referência local — lógica principal centralizada no TabHeader
   const toggleOnlineStatus = async (value: boolean) => {
     if (!user) return;
     setIsOnline(value);
@@ -143,23 +146,10 @@ export function HomeScreen() {
     }
   };
 
-  // ── Toggle de papel (Ouvir/Apoiar) ───────────────────────────────
-  const handleRoleChange = useCallback(
-    async (newRole: string) => {
-      if (!user || !profile || isUpdatingRole) return;
-      if (newRole === profile.role) return;
-      setIsUpdatingRole(true);
-      try {
-        await updateDoc(doc(db, 'users', user.uid), {
-          role: newRole,
-          isOnline: newRole === 'listener',
-        });
-      } finally {
-        setIsUpdatingRole(false);
-      }
-    },
-    [user, profile, isUpdatingRole]
-  );
+  // NOTA: handleRoleChange foi removido desta tela.
+  // A lógica de troca de papel (Ouvir/Apoiar) e persistência de isOnline
+  // está centralizada no TabHeader para evitar race condition no Firestore.
+
 
   // ── Compartilhar código referral ─────────────────────────────────
   const handleShare = useCallback(async () => {
@@ -200,8 +190,10 @@ export function HomeScreen() {
         <View style={styles.content}>
 
           {/* ═══════════════════════════════════════════════════════
-              4. BLACK CARD — Disponibilidade (listener) / Progresso (speaker)
-          ═══════════════════════════════════════════════════════ */}
+              4. CARDS DE AÇÃO
+              - Listener: BlackCard Disponibilidade (como antes)
+              - Speaker: Início Rápido + Agendar Momento
+          ═══════════════════════════════════════════════ */}
           {isListener ? (
             <BlackCard
               icon={<Calendar size={34} color={colors.textInverted} strokeWidth={1.8} />}
@@ -213,15 +205,72 @@ export function HomeScreen() {
               onAction={() => {}}
             />
           ) : (
-            <BlackCard
-              icon={<Trophy size={34} color={colors.textInverted} strokeWidth={1.8} />}
-              label="Speaker"
-              title="Seu Progresso"
-              subtitle="Acompanhe seu nível e medalhas conquistadas."
-              actionLabel="Ver Jornada →"
-              onAction={() => {}}
-            />
+            // Modo Ouvir: Início Rápido + Agendar Momento
+            <View style={styles.speakerCards}>
+
+              {/* ─── Card Início Rápido ─────────────────────────────── */}
+              <TouchableOpacity
+                style={[styles.quickStartCard, shadows.sm]}
+                onPress={() => setStartModalVisible(true)}
+                activeOpacity={0.88}
+              >
+                <View style={styles.quickStartBgBlob} />
+                <View style={styles.quickStartIconWrap}>
+                  <Flame size={26} color={colors.primary} strokeWidth={1.8} />
+                </View>
+                <View style={styles.quickStartContent}>
+                  <Text style={styles.quickStartTitle}>INÍCIO RÁPIDO</Text>
+                  <Text style={styles.quickStartSubtitle}>
+                    Precisa conversar agora? Escolha um tema e comece.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.quickStartBtn}
+                  onPress={() => setStartModalVisible(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.quickStartBtnText}>CONVERSAR AGORA →</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+
+              {/* ─── Card Agendar Momento ───────────────────────────── */}
+              <TouchableOpacity
+                style={[styles.scheduleCard, shadows.sm]}
+                onPress={() => navigation.navigate('ScheduleMatch', {})}
+                activeOpacity={0.88}
+              >
+                <View style={styles.scheduleBgBlob} />
+                <View style={styles.scheduleIconWrap}>
+                  <Calendar size={26} color={colors.textInverted} strokeWidth={1.8} />
+                </View>
+                <View style={styles.scheduleContent}>
+                  <Text style={styles.scheduleTitle}>AGENDAR MOMENTO</Text>
+                  <Text style={styles.scheduleSubtitle}>
+                    Prefere marcar um horário? Escolha quem você quer ouvir.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.scheduleBtn}
+                  onPress={() => navigation.navigate('ScheduleMatch', {})}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.scheduleBtnText}>AGENDAR →</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+
+            </View>
           )}
+
+          {/* StartModal — mesmo fluxo do botão central COMEÇAR */}
+          <StartModal
+            visible={startModalVisible}
+            onClose={() => setStartModalVisible(false)}
+            onSelectTheme={(theme) => {
+              setStartModalVisible(false);
+              navigation.navigate('MatchSearch', { category: theme });
+            }}
+          />
+
 
           {/* ═══════════════════════════════════════════════════════
               5. STATS — lista vertical
@@ -255,7 +304,7 @@ export function HomeScreen() {
                 <Video size={18} color={colors.primary} />
                 <Text style={styles.sessionsTitle}>SESSÕES</Text>
               </View>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => (navigation as any).navigate('SessionsTab')}>
                 <Text style={styles.sessionsVerTudo}>VER TUDO</Text>
               </TouchableOpacity>
             </View>
@@ -279,7 +328,15 @@ export function HomeScreen() {
                   ⏱ SESSÕES RECENTES
                 </Text>
                 {recent.slice(0, 3).map((s) => (
-                  <SessionRow key={s.id} session={s} isRecent />
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    isRecent
+                    onPress={() => (navigation as any).navigate('SessionsTab', {
+                      screen: 'SessionDetail',
+                      params: { sessionId: s.id },
+                    })}
+                  />
                 ))}
               </>
             )}
@@ -605,7 +662,123 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.medium,
     flex: 1,
   },
+
+  // ─── Cards de Ação — Modo Ouvir ─────────────────────────────────
+  speakerCards: {
+    gap: spacing.md,
+  },
+
+  // Card Início Rápido (light, borda primária)
+  quickStartCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    overflow: 'hidden',
+  },
+  quickStartBgBlob: {
+    position: 'absolute',
+    top: -24,
+    right: -24,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: `${colors.primary}12`,
+  },
+  quickStartIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickStartContent: { gap: 4 },
+  quickStartTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: typography.tracking.tight,
+  },
+  quickStartSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
+  },
+  quickStartBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    ...shadows.primary,
+  },
+  quickStartBtnText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: typography.tracking.wider,
+  },
+
+  // Card Agendar Momento (dark)
+  scheduleCard: {
+    backgroundColor: colors.dark ?? '#1A1A1A',
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    overflow: 'hidden',
+  },
+  scheduleBgBlob: {
+    position: 'absolute',
+    top: -24,
+    right: -24,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  scheduleIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scheduleContent: { gap: 4 },
+  scheduleTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: typography.tracking.tight,
+  },
+  scheduleSubtitle: {
+    fontSize: typography.size.sm,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
+  },
+  scheduleBtn: {
+    backgroundColor: colors.textInverted,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+  },
+  scheduleBtnText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.dark ?? '#1A1A1A',
+    letterSpacing: typography.tracking.wider,
+  },
 });
+
+
 
 const row = StyleSheet.create({
   container: {

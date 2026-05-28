@@ -1,3 +1,6 @@
+// @ts-nocheck — Arquivo preservado mas removido do fluxo de navegação (Task 1).
+// Os tipos de rota não correspondem mais ao AuthStackParamList simplificado.
+// Não deletar: pode ser reutilizado em futuras features de seleção de papel.
 import React, { useRef } from 'react';
 import {
   View,

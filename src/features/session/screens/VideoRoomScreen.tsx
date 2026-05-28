@@ -11,11 +11,13 @@ import {
   Modal,
   ScrollView,
   TextInput,
+  Animated,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
 import { WebView } from 'react-native-webview';
-import { PhoneOff, ShieldCheck, Gift, ShieldAlert } from 'lucide-react-native';
+import { Gift, ShieldAlert } from 'lucide-react-native';
 import {
   doc,
   onSnapshot,
@@ -139,6 +141,37 @@ export function VideoRoomScreen() {
   const webViewRef = useRef<WebView>(null);
   // Ref como guard: evita duplo encerramento pelo botão custom + botão nativo do Jitsi
   const isEndingCallRef = useRef(false);
+
+  // ── Overlay inferior (gorjeta/denúncia) — auto-hide ──────────────────
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const overlayAnim = useRef(new Animated.Value(1)).current;
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Mostra overlay e agenda auto-hide após 4s
+  const showOverlay = useCallback(() => {
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    setOverlayVisible(true);
+    Animated.timing(overlayAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    overlayTimerRef.current = setTimeout(() => {
+      Animated.timing(overlayAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => setOverlayVisible(false));
+    }, 4000);
+  }, [overlayAnim]);
+
+  // Mostra overlay ao entrar na sala
+  useEffect(() => {
+    showOverlay();
+    return () => {
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    };
+  }, []);
 
   // ─── Determinar papel do usuário na sessão ───────────────────────────
   // isSpeaker: usuário que buscou a sessão (pode dar gorjeta ao apoiador)
@@ -394,160 +427,147 @@ export function VideoRoomScreen() {
   const jitsiBaseUrl = jitsiDomain.startsWith('http') ? jitsiDomain : `https://${jitsiDomain}`;
   const jitsiRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
   const displayName = encodeURIComponent(profile?.name || 'Acolhedor/Ouvinte');
-  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.MOBILE_APP_PROMO=false&interfaceConfig.TOOLBAR_BUTTONS=["microphone","camera","closedcaptions","desktop","fullscreen","fittowindow","profile","chat","settings","videoquality","filmstrip","feedback","stats","shortcuts","tileview","videobackgroundblur","download","help","mute-everyone","security"]&userInfo.displayName="${displayName}"`;
+  // config.startWithAudioMuted=false garante que o microfone não inicia mudo.
+  // config.startWithVideoMuted=false garante que a câmera não inicia desligada.
+  // Não usar interfaceConfig.TOOLBAR_BUTTONS como string — pode ser ignorado pelo servidor.
+  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&interfaceConfig.MOBILE_APP_PROMO=false&userInfo.displayName="${displayName}"`;
 
-  // Header compacto posicionado abaixo do status bar/notch, não cobre controles do Jitsi
-  const headerTop = insets.top + 12;
+  // Timer mínimo pill — posição absoluta acima do notch
+  const timerTop = insets.top + 8;
+  // Overlay inferior — fica acima da toolbar nativa do Jitsi (~90px)
+  const overlayBottom = insets.bottom + 90;
 
   return (
-    // edges vazio: o Jitsi ocupa 100% da tela (incluindo área de notch e bottom)
-    // O header flutua acima via position absolute, dentro da área segura
+    // edges vazio: o Jitsi ocupa 100% da tela
     <SafeAreaView style={styles.root} edges={[]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── Área de Vídeo (WebView) — 100% da tela ── */}
-      <View style={styles.videoContainer}>
-        {webViewVisible ? (
-          <WebView
-            ref={webViewRef}
-            source={{ uri: jitsiUrl }}
-            style={styles.webview}
-            originWhitelist={['*']}
-            mediaPlaybackRequiresUserAction={false}
-            domStorageEnabled={true}
-            javaScriptEnabled={true}
-            allowFileAccess={true}
-            allowsInlineMediaPlayback={true}
-            setSupportMultipleWindows={false}
-            // Injeta o script ANTES do content para garantir que os listeners estejam prontos
-            injectedJavaScriptBeforeContentLoaded={JITSI_HANGUP_BRIDGE_JS}
-            onMessage={handleWebViewMessage}
-            onShouldStartLoadWithRequest={(request) => {
-              const url = request.url || '';
-              if (
-                url.startsWith('intent://') ||
-                url.startsWith('market://') ||
-                url.includes('play.google.com') ||
-                url.includes('itunes.apple.com') ||
-                url.startsWith('whatsapp://') ||
-                url.startsWith('tel:') ||
-                url.startsWith('mailto:')
-              ) {
-                return false;
-              }
-              const allowedDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
-
-              // ── Detectar e bloquear redirecionamento para home do Jitsi ─────────────────
-              // Quando o usuário clica no botão vermelho nativo do Jitsi, o servidor navega
-              // a WebView para a raiz (sem o hash da sala) ANTES de disparar o postMessage.
-              // Interceptar aqui garante que a home nunca aparece para o usuário.
-              try {
-                const parsedUrl = new URL(url);
-                const currentRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
-                const isJitsiDomain = parsedUrl.hostname === allowedDomain;
-                const isRootOrHome = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
-                const hasRoomHash = url.includes(currentRoomName);
-
-                if (isJitsiDomain && isRootOrHome && !hasRoomHash && !isEndingCallRef.current) {
-                  console.log('[JitsiHangup Mobile] blocked Jitsi home redirect');
-                  setWebViewVisible(false);
-                  console.log('[JitsiHangup Mobile] hiding WebView before redirect');
-                  completeSessionAndExit('jitsi_native_hangup');
-                  console.log('[JitsiHangup Mobile] completing Meu Best session');
+      {/* ── Área de Vídeo — touch mostra overlay ── */}
+      <TouchableWithoutFeedback onPress={showOverlay}>
+        <View style={styles.videoContainer}>
+          {webViewVisible ? (
+            <WebView
+              ref={webViewRef}
+              source={{ uri: jitsiUrl }}
+              style={styles.webview}
+              originWhitelist={['*']}
+              mediaPlaybackRequiresUserAction={false}
+              domStorageEnabled={true}
+              javaScriptEnabled={true}
+              allowFileAccess={true}
+              allowsInlineMediaPlayback={true}
+              setSupportMultipleWindows={false}
+              // Concede permissões de captura de mídia (microfone/câmera) à WebView do Jitsi.
+              // 'grantIfSameHostElsePrompt' concede automaticamente para o host do Jitsi.
+              {...{ mediaCapturePermissionGrantType: 'grantIfSameHostElsePrompt' } as any}
+              // Injeta o script ANTES do content para garantir que os listeners estejam prontos
+              injectedJavaScriptBeforeContentLoaded={JITSI_HANGUP_BRIDGE_JS}
+              onMessage={handleWebViewMessage}
+              onShouldStartLoadWithRequest={(request) => {
+                const url = request.url || '';
+                if (
+                  url.startsWith('intent://') ||
+                  url.startsWith('market://') ||
+                  url.includes('play.google.com') ||
+                  url.includes('itunes.apple.com') ||
+                  url.startsWith('whatsapp://') ||
+                  url.startsWith('tel:') ||
+                  url.startsWith('mailto:')
+                ) {
                   return false;
                 }
-              } catch (_) {}
-              // ─────────────────────────────────────────────────────────────────────────────
+                const allowedDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
 
-              const isAllowed =
-                url.includes(allowedDomain) ||
-                url.startsWith('about:blank') ||
-                url.startsWith('blob:');
-              if (!isAllowed) {
-                return false;
-              }
-              return true;
-            }}
-            {...{
-              onPermissionRequest: (request: any) => {
-                request.grant(request.resources);
-              },
-            } as any}
-          />
-        ) : (
-          // Placeholder escuro enquanto a sessão encerra (evita flash da home Jitsi)
-          <View style={styles.callEndingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.callEndingText}>Encerrando sessão...</Text>
-          </View>
-        )}
+                // ── Detectar e bloquear redirecionamento para home do Jitsi ──────────────
+                try {
+                  const parsedUrl = new URL(url);
+                  const currentRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
+                  const isJitsiDomain = parsedUrl.hostname === allowedDomain;
+                  const isRootOrHome = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
+                  const hasRoomHash = url.includes(currentRoomName);
+
+                  if (isJitsiDomain && isRootOrHome && !hasRoomHash && !isEndingCallRef.current) {
+                    console.log('[JitsiHangup Mobile] blocked Jitsi home redirect');
+                    setWebViewVisible(false);
+                    completeSessionAndExit('jitsi_native_hangup');
+                    return false;
+                  }
+                } catch (_) {}
+
+                const isAllowed =
+                  url.includes(allowedDomain) ||
+                  url.startsWith('about:blank') ||
+                  url.startsWith('blob:');
+                if (!isAllowed) {
+                  return false;
+                }
+                return true;
+              }}
+              onPermissionRequest={(request: any) => {
+                // Concede explicitamente AUDIO_CAPTURE, VIDEO_CAPTURE e outras
+                // permissões solicitadas pela WebView (Android)
+                if (request && request.grant && request.resources) {
+                  request.grant(request.resources);
+                }
+              }}
+            />
+          ) : (
+            // Placeholder escuro enquanto a sessão encerra (evita flash da home Jitsi)
+            <View style={styles.callEndingOverlay}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.callEndingText}>Encerrando sessão...</Text>
+            </View>
+          )}
+        </View>
+      </TouchableWithoutFeedback>
+
+      {/* ── Timer mínimo — pill discreta no topo ── */}
+      <View
+        style={[styles.timerPill, { top: timerTop }]}
+        pointerEvents="none"
+      >
+        <View style={styles.timerDot} />
+        <Text style={styles.timerPillText}>{elapsedText}</Text>
       </View>
 
-      {/* ── Header compacto flutuante superior ──────────────────────
-          - position: absolute para não empurrar o Jitsi
-          - top: insets.top + 12 → fica abaixo do status bar/notch
-          - NÃO cobre os controles inferiores do Jitsi
-          - zIndex alto para ficar acima do WebView
-          ────────────────────────────────────────────────────────── */}
-      <View
-        style={[
-          styles.header,
-          { top: headerTop },
-        ]}
-        pointerEvents="box-none"
-      >
-        {/* Lado esquerdo: ícone + tema + timer */}
-        <View style={styles.headerLeft} pointerEvents="none">
-          <View style={styles.shieldBadge}>
-            <ShieldCheck size={14} color={colors.primary} strokeWidth={2} />
-          </View>
-          <View>
-            <Text style={styles.categoryLabel} numberOfLines={1}>
-              {session?.category || 'Sessão de Apoio'}
-            </Text>
-            <Text style={styles.timerLabel}>{elapsedText} · Segura</Text>
-          </View>
-        </View>
-
-        {/* Lado direito: botões de ação */}
-        <View style={styles.headerActions}>
-          {/* Botão Gorjeta — apenas para o speaker/ouvinte */}
-          {isSpeaker && session && (
+      {/* ── Overlay inferior — Gorjeta + Denúncia (auto-hide) ── */}
+      {session && (
+        <Animated.View
+          style={[
+            styles.bottomOverlay,
+            { bottom: overlayBottom, opacity: overlayAnim },
+          ]}
+          pointerEvents={overlayVisible ? 'box-none' : 'none'}
+        >
+          {/* Botão Gorjeta — apenas speaker */}
+          {isSpeaker && (
             <TouchableOpacity
-              style={styles.tipBtn}
-              onPress={handleOpenTip}
-              activeOpacity={0.8}
+              style={styles.overlayBtn}
+              onPress={() => {
+                showOverlay();
+                handleOpenTip();
+              }}
+              activeOpacity={0.85}
             >
-              <Gift size={13} color={colors.primary} strokeWidth={2.2} />
-              <Text style={styles.tipBtnText}>GORJETA</Text>
+              <Gift size={16} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.overlayBtnText}>GORJETA</Text>
             </TouchableOpacity>
           )}
 
           {/* Botão Denunciar */}
-          {session && (
-            <TouchableOpacity
-              style={styles.reportBtn}
-              onPress={() => setIsReportModalOpen(true)}
-              activeOpacity={0.8}
-            >
-              <ShieldAlert size={13} color="#EF4444" strokeWidth={2.2} />
-            </TouchableOpacity>
-          )}
-
-          {/* Botão Encerrar */}
           <TouchableOpacity
-            style={styles.endCallBtn}
+            style={[styles.overlayBtn, styles.overlayBtnReport]}
             onPress={() => {
-              console.log('[CallEnd Mobile] button pressed (header)');
-              completeSessionAndExit('user_hangup');
+              showOverlay();
+              setIsReportModalOpen(true);
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
-            <PhoneOff size={13} color={colors.textInverted} strokeWidth={2.2} />
-            <Text style={styles.endCallText}>ENCERRAR</Text>
+            <ShieldAlert size={16} color="#EF4444" strokeWidth={2} />
+            <Text style={[styles.overlayBtnText, { color: '#EF4444' }]}>DENUNCIAR</Text>
           </TouchableOpacity>
-        </View>
-      </View>
+        </Animated.View>
+      )}
 
       {/* ── Modal de Denúncia ──────────────────────────────────────── */}
       <Modal
@@ -686,7 +706,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
   },
 
-  // ── Vídeo ──────────────────────────────────────────────────────────
+  // ── Vídeo ────────────────────────────────────────────────────────────
   videoContainer: {
     flex: 1,
     backgroundColor: '#000',
@@ -709,118 +729,67 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // ── Header superior flutuante ─────────────────────────────────────
-  header: {
+
+  // ── Timer mínimo (pill) no topo ────────────────────────────────────
+  timerPill: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(10,10,10,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    zIndex: 999,
+    alignSelf: 'center',
+  },
+  timerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  timerPillText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 11,
+    fontWeight: typography.weight.bold,
+    letterSpacing: 0.5,
+  },
+
+  // ── Overlay inferior ─────────────────────────────────────────────
+  bottomOverlay: {
     position: 'absolute',
     left: 12,
-    right: 12,
-    minHeight: 52,
-    backgroundColor: 'rgba(10, 10, 10, 0.82)',
-    borderRadius: 16,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
-    // Sombra para destacar sobre o Jitsi
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    elevation: 12,
+    gap: 8,
     zIndex: 999,
   },
-  headerLeft: {
+  overlayBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm - 2,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  shieldBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: `${colors.primary}18`,
-    borderWidth: 1,
-    borderColor: `${colors.primary}30`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  categoryLabel: {
-    color: 'rgba(255,255,255,0.95)',
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.black,
-    textTransform: 'capitalize',
-    maxWidth: 120,
-  },
-  timerLabel: {
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 10,
-    fontWeight: typography.weight.bold,
-    letterSpacing: 0.2,
-  },
-
-  // Botão Gorjeta
-  tipBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: `${colors.primary}22`,
-    borderRadius: borderRadius.full,
-    paddingVertical: 7,
-    paddingHorizontal: spacing.sm,
-    gap: 4,
+    gap: 5,
+    backgroundColor: 'rgba(10,10,10,0.72)',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: `${colors.primary}44`,
-  },
-  tipBtnText: {
-    color: colors.primary,
-    fontWeight: typography.weight.black,
-    fontSize: 9,
-    letterSpacing: 0.7,
-  },
-
-  // Botão Denunciar
-  reportBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  endCallBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    borderRadius: borderRadius.full,
-    paddingVertical: 7,
-    paddingHorizontal: spacing.sm + 4,
-    gap: 5,
-    minWidth: 88,
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 3 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  endCallText: {
-    color: colors.textInverted,
-    fontWeight: typography.weight.black,
+  overlayBtnReport: {
+    borderColor: 'rgba(239,68,68,0.4)',
+  },
+  overlayBtnText: {
+    color: colors.primary,
     fontSize: 10,
-    letterSpacing: 0.7,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.8,
   },
 
   // ── Modal de Denúncia ─────────────────────────────────────────────
