@@ -31,6 +31,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius } from '@constants/theme';
+import { InCallTipModal } from '@features/session/components/InCallTipModal';
 
 // ─── JavaScript injetado na WebView para interceptar o hangup nativo do Jitsi ──
 // Quando o usuário clica no botão vermelho nativo do Jitsi, dispara
@@ -63,6 +64,9 @@ const JITSI_HANGUP_BRIDGE_JS = `
       if (data && (data.action === 'readyToClose' || data.action === 'videoConferenceLeft')) {
         sendHangup();
       }
+      if (data && (data.action === 'videoConferenceJoined' || data.action === 'conferenceJoined')) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+      }
     } catch(e) {}
   });
 
@@ -81,8 +85,22 @@ const JITSI_HANGUP_BRIDGE_JS = `
         // Delay mínimo para Jitsi processar o clique antes de notificar o RN
         setTimeout(sendHangup, 300);
       }, true);
+
+      // Sinal C: A presença do botão de hangup (e listener) indica que a sala real iniciou
+      if (!window.__meubest_joined_sent) {
+        window.__meubest_joined_sent = true;
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+      }
     }
   }
+
+  // Detectar cliques na tela para o auto-hide
+  document.addEventListener('click', function() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' }));
+  }, true);
+  document.addEventListener('touchstart', function() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' }));
+  }, { passive: true, capture: true });
 
   // Observa mudanças no DOM para capturar o botão quando o Jitsi terminar de carregar
   var observer = new MutationObserver(function() {
@@ -101,6 +119,21 @@ const JITSI_HANGUP_BRIDGE_JS = `
   var poll = setInterval(function() {
     attachHangupListener();
     pollCount++;
+    
+    // Fallback de JOINED: se já tem o botão de hangup e não tem botão join
+    if (!window.__meubest_joined_sent) {
+      var hangupBtn = document.querySelector('[data-testid="toolbar.hangup"]')
+        || document.querySelector('[aria-label*="Leave"]')
+        || document.querySelector('.toolbox-button-red');
+      var joinBtn = document.querySelector('[aria-label*="Join meeting"]')
+        || document.querySelector('.prejoin-preview-dropdown-btns');
+
+      if (hangupBtn && !joinBtn) {
+        window.__meubest_joined_sent = true;
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+      }
+    }
+
     if (pollCount >= 30) clearInterval(poll);
   }, 2000);
 
@@ -131,6 +164,7 @@ export function VideoRoomScreen() {
 
   // Oculta a WebView imediatamente ao encerrar, evitando flash da home do Jitsi
   const [webViewVisible, setWebViewVisible] = useState(true);
+  const [hasJoinedMeeting, setHasJoinedMeeting] = useState(false);
 
   // ─── Estado de denúncia ──────────────────────────────────────────────
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -138,39 +172,18 @@ export function VideoRoomScreen() {
   const [reportComment, setReportComment] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
+  // ─── Estado de Gorjeta (In-Call) ─────────────────────────────────────
+  const [isTipModalOpen, setIsTipModalOpen] = useState(false);
+
   const webViewRef = useRef<WebView>(null);
   // Ref como guard: evita duplo encerramento pelo botão custom + botão nativo do Jitsi
   const isEndingCallRef = useRef(false);
 
   // ── Overlay inferior (gorjeta/denúncia) — auto-hide ──────────────────
-  const [overlayVisible, setOverlayVisible] = useState(true);
-  const overlayAnim = useRef(new Animated.Value(1)).current;
-  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Mostra overlay e agenda auto-hide após 4s
+  // Auto-hide temporariamente desativado para garantir visibilidade 100% durante a chamada.
+  
   const showOverlay = useCallback(() => {
-    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-    setOverlayVisible(true);
-    Animated.timing(overlayAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-    overlayTimerRef.current = setTimeout(() => {
-      Animated.timing(overlayAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => setOverlayVisible(false));
-    }, 4000);
-  }, [overlayAnim]);
-
-  // Mostra overlay ao entrar na sala
-  useEffect(() => {
-    showOverlay();
-    return () => {
-      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-    };
+    // Mantido como função vazia para evitar quebras em chamadas antigas.
   }, []);
 
   // ─── Determinar papel do usuário na sessão ───────────────────────────
@@ -347,21 +360,19 @@ export function VideoRoomScreen() {
         if (msg.type === 'JITSI_HANGUP') {
           console.log('[CallEnd] jitsi native hangup detected');
           completeSessionAndExit('jitsi_native_hangup');
+        } else if (msg.type === 'JITSI_JOINED') {
+          if (!hasJoinedMeeting) {
+            console.log('[VideoRoom] JITSI_JOINED detected');
+            setHasJoinedMeeting(true);
+            showOverlay();
+          }
+        } else if (msg.type === 'JITSI_CLICKED') {
+          showOverlay();
         }
       } catch (_) {}
     },
-    [completeSessionAndExit]
+    [completeSessionAndExit, showOverlay, hasJoinedMeeting]
   );
-
-  // ─── Gorjeta durante chamada ────────────────────────────────────────
-  const handleOpenTip = useCallback(() => {
-    if (!session?.listenerId) {
-      Alert.alert('Apoiador Indisponível', 'Não foi possível identificar o recebedor da gorjeta.');
-      return;
-    }
-    // Navega para gorjeta com fromCall=true — ao voltar, retorna para esta tela
-    navigation.navigate('TipAfterSession', { sessionId, fromCall: true });
-  }, [session?.listenerId, navigation, sessionId]);
 
   // ─── Denúncia ───────────────────────────────────────────────────────
   const submitReport = async () => {
@@ -530,14 +541,14 @@ export function VideoRoomScreen() {
         <Text style={styles.timerPillText}>{elapsedText}</Text>
       </View>
 
-      {/* ── Overlay inferior — Gorjeta + Denúncia (auto-hide) ── */}
-      {session && (
-        <Animated.View
+      {/* ── Overlay inferior — Gorjeta + Denúncia (sempre visível após joined) ── */}
+      {session && hasJoinedMeeting && webViewVisible && (
+        <View
           style={[
             styles.bottomOverlay,
-            { bottom: overlayBottom, opacity: overlayAnim },
+            { bottom: overlayBottom },
           ]}
-          pointerEvents={overlayVisible ? 'box-none' : 'none'}
+          pointerEvents="box-none"
         >
           {/* Botão Gorjeta — apenas speaker */}
           {isSpeaker && (
@@ -545,12 +556,12 @@ export function VideoRoomScreen() {
               style={styles.overlayBtn}
               onPress={() => {
                 showOverlay();
-                handleOpenTip();
+                setIsTipModalOpen(true);
               }}
               activeOpacity={0.85}
+              accessibilityLabel="Enviar gorjeta"
             >
-              <Gift size={16} color={colors.primary} strokeWidth={2} />
-              <Text style={styles.overlayBtnText}>GORJETA</Text>
+              <Gift size={22} color={colors.primary} strokeWidth={2} />
             </TouchableOpacity>
           )}
 
@@ -562,11 +573,22 @@ export function VideoRoomScreen() {
               setIsReportModalOpen(true);
             }}
             activeOpacity={0.85}
+            accessibilityLabel="Denunciar usuário"
           >
-            <ShieldAlert size={16} color="#EF4444" strokeWidth={2} />
-            <Text style={[styles.overlayBtnText, { color: '#EF4444' }]}>DENUNCIAR</Text>
+            <ShieldAlert size={22} color="#EF4444" strokeWidth={2} />
           </TouchableOpacity>
-        </Animated.View>
+        </View>
+      )}
+
+      {/* ── Modal de Gorjeta In-Call ── */}
+      {isSpeaker && (
+        <InCallTipModal
+          visible={isTipModalOpen}
+          onClose={() => setIsTipModalOpen(false)}
+          sessionId={sessionId}
+          listenerId={session?.listenerId}
+          supporterName="Acolhedor"
+        />
       )}
 
       {/* ── Modal de Denúncia ──────────────────────────────────────── */}
@@ -761,19 +783,19 @@ const styles = StyleSheet.create({
   // ── Overlay inferior ─────────────────────────────────────────────
   bottomOverlay: {
     position: 'absolute',
-    left: 12,
+    left: 24,
     flexDirection: 'row',
     gap: 8,
-    zIndex: 999,
+    zIndex: 9999,
+    elevation: 9999,
   },
   overlayBtn: {
-    flexDirection: 'row',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 5,
     backgroundColor: 'rgba(10,10,10,0.72)',
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: `${colors.primary}44`,
     shadowColor: '#000',
@@ -784,12 +806,6 @@ const styles = StyleSheet.create({
   },
   overlayBtnReport: {
     borderColor: 'rgba(239,68,68,0.4)',
-  },
-  overlayBtnText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: typography.weight.black,
-    letterSpacing: 0.8,
   },
 
   // ── Modal de Denúncia ─────────────────────────────────────────────
