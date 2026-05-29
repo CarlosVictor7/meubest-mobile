@@ -85,12 +85,6 @@ const JITSI_HANGUP_BRIDGE_JS = `
         // Delay mínimo para Jitsi processar o clique antes de notificar o RN
         setTimeout(sendHangup, 300);
       }, true);
-
-      // Sinal C: A presença do botão de hangup (e listener) indica que a sala real iniciou
-      if (!window.__meubest_joined_sent) {
-        window.__meubest_joined_sent = true;
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
-      }
     }
   }
 
@@ -120,17 +114,27 @@ const JITSI_HANGUP_BRIDGE_JS = `
     attachHangupListener();
     pollCount++;
     
-    // Fallback de JOINED: se já tem o botão de hangup e não tem botão join
+    // Fallback de JOINED seguro
     if (!window.__meubest_joined_sent) {
       var hangupBtn = document.querySelector('[data-testid="toolbar.hangup"]')
         || document.querySelector('[aria-label*="Leave"]')
         || document.querySelector('.toolbox-button-red');
-      var joinBtn = document.querySelector('[aria-label*="Join meeting"]')
-        || document.querySelector('.prejoin-preview-dropdown-btns');
+        
+      var isPreJoin = document.querySelector('[aria-label*="Join meeting"]')
+        || document.querySelector('.prejoin-preview-dropdown-btns')
+        || document.querySelector('.prejoin-input-area')
+        || document.querySelector('[data-testid="prejoin.joinMeeting"]');
 
-      if (hangupBtn && !joinBtn) {
-        window.__meubest_joined_sent = true;
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+      if (hangupBtn && !isPreJoin) {
+        // Se parece ter entrado, aguarda 1.5s para confirmar que não é um piscar da tela prejoin
+        setTimeout(function() {
+          var stillPreJoin = document.querySelector('[aria-label*="Join meeting"]')
+            || document.querySelector('.prejoin-preview-dropdown-btns');
+          if (!stillPreJoin && !window.__meubest_joined_sent) {
+            window.__meubest_joined_sent = true;
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+          }
+        }, 1500);
       }
     }
 
