@@ -8,7 +8,6 @@ export const SESSION_THEMES = [
   { id: 'estudos', label: 'Estudos', emoji: '📚' },
   { id: 'familia', label: 'Família', emoji: '👨‍👩‍👧' },
   { id: 'ansiedade', label: 'Ansiedade', emoji: '😓' },
-  { id: 'solidao', label: 'Solidão', emoji: '🤍' },
   { id: 'outras', label: 'Outras', emoji: '💬' },
 ] as const;
 

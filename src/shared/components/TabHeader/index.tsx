@@ -35,12 +35,12 @@ const LISTENER_ONLINE_PREF_KEY = '@meubest:listenerOnlinePreference';
 const ROLE_OPTIONS = [
   {
     value: 'speaker',
-    label: 'Ouvir',
+    label: 'Desabafar',
     icon: <Text style={{ fontSize: 13 }}>💬</Text>,
   },
   {
     value: 'listener',
-    label: 'Apoiar',
+    label: 'Acolher',
     icon: <Text style={{ fontSize: 13 }}>❤️</Text>,
   },
 ];
@@ -49,12 +49,12 @@ const ROLE_OPTIONS = [
 const HOW_IT_WORKS = [
   {
     icon: '💬',
-    title: 'Ouvir',
-    body: 'Você busca alguém com quem conversar. Conectamos você a um voluntário disponível no momento.',
+    title: 'Desabafar',
+    body: 'Você busca alguém com quem desabafar. Conectamos você a um voluntário disponível no momento.',
   },
   {
     icon: '❤️',
-    title: 'Apoiar',
+    title: 'Acolher',
     body: 'Você indica que está disponível para ouvir alguém. Ative sua chave Online quando puder acolher.',
   },
   {

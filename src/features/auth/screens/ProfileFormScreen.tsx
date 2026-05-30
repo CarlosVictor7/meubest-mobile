@@ -292,7 +292,7 @@ export function ProfileFormScreen() {
                           formData.role === 'listener' ? { color: '#FFF' } : { color: colors.primary },
                         ]}
                       >
-                        QUERO OUVIR
+                        QUERO DESABAFAR
                       </Text>
                       <Text
                         style={[

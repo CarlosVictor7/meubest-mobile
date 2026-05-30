@@ -186,8 +186,8 @@ export function WalletScreen() {
 
   const mapTransactionType = (type: string) => {
     const map: Record<string, string> = {
-      tip_received: 'Gorjeta recebida',
-      tip_sent: 'Gorjeta enviada',
+      tip_received: 'Retribuição recebida',
+      tip_sent: 'Retribuição enviada',
       total_fee: 'Taxa total',
       withdrawal: 'Saque',
       refund: 'Reembolso'
@@ -230,7 +230,7 @@ export function WalletScreen() {
         <View style={s.padded}>
           <View style={[s.balanceCard, shadows.primary]}>
             {/* Saldo disponível */}
-            <Text style={s.balLabel}>GORJETAS RECEBIDAS</Text>
+            <Text style={s.balLabel}>RETRIBUIÇÕES RECEBIDAS</Text>
             <Text style={s.balValue}>R$ {availableBalance.toFixed(2)}</Text>
             
             {/* Informações extras */}
@@ -384,7 +384,7 @@ export function WalletScreen() {
             </View>
             
             <Text style={s.bankDesc}>
-              Cadastre sua chave PIX para receber as gorjetas das suas sessões.
+              Cadastre sua chave PIX para receber as retribuições das suas sessões.
             </Text>
             {/* Tipo de chave Pix */}
             <View style={[s.fieldWrap, { marginTop: spacing.md }]}>
@@ -490,9 +490,9 @@ export function WalletScreen() {
                 <X size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-            <Text style={m.wdTitle}>{'Resgate de\nGorjetas'}</Text>
+            <Text style={m.wdTitle}>{'Resgate de\nRetribuições'}</Text>
             <Text style={m.wdDesc}>
-              Você pode resgatar suas gorjetas diretamente para sua conta bancária PIX.
+              Você pode resgatar suas retribuições diretamente para sua conta bancária PIX.
             </Text>
 
             {/* Saldo card */}

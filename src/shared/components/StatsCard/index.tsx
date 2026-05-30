@@ -7,6 +7,7 @@ import {
   View,
   Text,
   StyleSheet,
+  TouchableOpacity,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -18,11 +19,17 @@ interface StatsCardProps {
   subValue?: string;
   icon: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  onPress?: () => void;
 }
 
-export function StatsCard({ label, value, subValue, icon, style }: StatsCardProps) {
+export function StatsCard({ label, value, subValue, icon, style, onPress }: StatsCardProps) {
   return (
-    <View style={[styles.card, shadows.sm, style]}>
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
+      onPress={onPress}
+      style={[styles.card, shadows.sm, style]}
+    >
       {/* Conteúdo esquerdo — label + valor */}
       <View style={styles.left}>
         <Text style={styles.label}>{label.toUpperCase()}</Text>
@@ -34,7 +41,7 @@ export function StatsCard({ label, value, subValue, icon, style }: StatsCardProp
       <View style={styles.iconWrap}>
         {icon}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

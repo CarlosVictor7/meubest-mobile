@@ -212,7 +212,7 @@ export function TipAfterSessionScreen() {
         Toast.show({
           type: 'error',
           text1: 'Valor Inválido',
-          text2: `O valor mínimo para gorjeta via Pix é R$ ${MIN_TIP_AMOUNT},00.`,
+          text2: `O valor mínimo para retribuição via Pix é R$ ${MIN_TIP_AMOUNT},00.`,
         });
         return;
       }
@@ -225,7 +225,7 @@ export function TipAfterSessionScreen() {
       Toast.show({
         type: 'error',
         text1: 'Apoiador Indisponível',
-        text2: 'Não foi possível identificar o recebedor da gorjeta.',
+        text2: 'Não foi possível identificar o recebedor da retribuição.',
       });
       return;
     }
@@ -275,7 +275,7 @@ export function TipAfterSessionScreen() {
 
             <Text style={styles.title}>PAGAMENTO CONFIRMADO! 🎉</Text>
             <Text style={styles.subtitle}>
-              Obrigado por apoiar este acolhedor. Sua gorjeta de{' '}
+              Obrigado por reconhecer este acolhedor. Sua retribuição de{' '}
               <Text style={styles.boldText}>R$ {pixData.amountGross.toFixed(2).replace('.', ',')}</Text>{' '}
               foi recebida com sucesso por{' '}
               <Text style={styles.boldText}>{supporterName}</Text>.
@@ -311,7 +311,7 @@ export function TipAfterSessionScreen() {
 
             <Text style={styles.title}>CÓDIGO PIX GERADO</Text>
             <Text style={styles.subtitle}>
-              Escaneie o QR Code ou copie o código abaixo para enviar a gorjeta de{' '}
+              Escaneie o QR Code ou copie o código abaixo para enviar a retribuição de{' '}
               <Text style={styles.boldText}>R$ {pixData.amountGross.toFixed(2).replace('.', ',')}</Text>{' '}
               para <Text style={styles.boldText}>{supporterName}</Text>.
             </Text>
@@ -385,9 +385,10 @@ export function TipAfterSessionScreen() {
             <Gift size={32} color={colors.primary} />
           </View>
 
-          <Text style={styles.title}>AGRADECER COM UMA GORJETA?</Text>
+          <Text style={styles.title}>RETRIBUIR O ACOLHEDOR?</Text>
           <Text style={styles.subtitle}>
-            Os acolhimentos no MeuBest são 100% voluntários. Se a conversa com <Text style={styles.boldText}>{supporterName}</Text> te ajudou, que tal retribuir o tempo dele com um incentivo?
+            O acolhimento no Meu.Best é voluntário. Se essa conversa te ajudou, você pode retribuir como forma de agradecimento.{"\n\n"}
+            <Text style={{ fontWeight: 'bold' }}>A retribuição é opcional e não altera seu acesso ao acolhimento.</Text>
           </Text>
 
           {/* Grid de Opções de Valor */}
@@ -472,7 +473,7 @@ export function TipAfterSessionScreen() {
               <ActivityIndicator size="small" color={colors.textInverted} />
             ) : (
               <View style={styles.btnContent}>
-                <Text style={styles.buttonText}>ENVIAR GORJETA VIA PIX</Text>
+                <Text style={styles.buttonText}>RETRIBUIR VIA PIX</Text>
                 <ChevronRight size={18} color={colors.textInverted} />
               </View>
             )}

@@ -563,7 +563,7 @@ export function VideoRoomScreen() {
                 setIsTipModalOpen(true);
               }}
               activeOpacity={0.85}
-              accessibilityLabel="Enviar gorjeta"
+              accessibilityLabel="Enviar retribuição"
             >
               <Gift size={22} color={colors.primary} strokeWidth={2} />
             </TouchableOpacity>

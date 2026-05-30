@@ -59,12 +59,12 @@ type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 const ROLE_OPTIONS = [
   {
     value: 'speaker',
-    label: 'Ouvir',
+    label: 'Desabafar',
     icon: <Text style={{ fontSize: 14 }}>💬</Text>,
   },
   {
     value: 'listener',
-    label: 'Apoiar',
+    label: 'Acolher',
     icon: <Text style={{ fontSize: 14 }}>❤️</Text>,
   },
 ];
@@ -273,7 +273,7 @@ export function HomeScreen() {
                 <View style={styles.quickStartContent}>
                   <Text style={styles.quickStartTitle}>INÍCIO RÁPIDO</Text>
                   <Text style={styles.quickStartSubtitle}>
-                    Precisa conversar agora? Escolha um tema e comece.
+                    Precisa desabafar agora? Escolha um tema e comece.
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -281,7 +281,7 @@ export function HomeScreen() {
                   onPress={() => setStartModalVisible(true)}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.quickStartBtnText}>CONVERSAR AGORA →</Text>
+                  <Text style={styles.quickStartBtnText}>DESABAFAR AGORA →</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
 
@@ -332,6 +332,7 @@ export function HomeScreen() {
               label="Sessões"
               value={String(sessionCount)}
               icon={<History size={20} color={colors.primary} strokeWidth={2} />}
+              onPress={() => (navigation as any).navigate('SessionsTab')}
             />
             <StatsCard
               label="Avaliação"
@@ -339,10 +340,11 @@ export function HomeScreen() {
               icon={<Star size={20} color={colors.primary} strokeWidth={2} />}
             />
             <StatsCard
-              label={isListener ? 'Gorjeta Atual' : 'Saldo'}
+              label={isListener ? 'Retribuição Atual' : 'Saldo Recebido'}
               value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
               subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
               icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
+              onPress={() => (navigation as any).navigate('WalletTab')}
             />
           </View>
 
@@ -406,7 +408,7 @@ export function HomeScreen() {
                 <Text style={styles.themesTitle}>TEMAS QUE VOCÊ APOIA</Text>
               </View>
               <Text style={styles.themesSubtitle}>
-                Escolha os assuntos em que você se sente preparado para acolher na rede.
+                Escolha os assuntos em que você se sente preparado para acolher.
               </Text>
 
               {isEditingThemes ? (
@@ -461,8 +463,8 @@ export function HomeScreen() {
                   <View style={styles.themesGrid}>
                     {profile?.interests && profile.interests.length > 0 ? (
                       SESSION_THEMES.filter((t) => (profile.interests ?? []).includes(t.id)).map((theme) => (
-                        <View key={theme.id} style={[styles.themePill, styles.themePillRead]}>
-                          <Text style={styles.themePillTextRead}>{theme.label}</Text>
+                        <View key={theme.id} style={[styles.themePill, styles.themePillActive]}>
+                          <Text style={[styles.themePillText, styles.themePillTextActive]}>{theme.label}</Text>
                         </View>
                       ))
                     ) : (
@@ -934,7 +936,7 @@ const styles = StyleSheet.create({
   themesHeaderIconWrap: {
     width: 32,
     height: 32,
-    borderRadius: borderRadius.sm,
+    borderRadius: 16,
     backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -961,10 +963,12 @@ const styles = StyleSheet.create({
   themePill: {
     backgroundColor: colors.background,
     borderRadius: borderRadius.full,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.primaryLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm - 2,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   themePillActive: {
     backgroundColor: colors.primary,

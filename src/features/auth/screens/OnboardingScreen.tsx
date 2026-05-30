@@ -52,8 +52,9 @@ const slides = [
     id: '4',
     Icon: Star,
     gradient: [colors.primary, '#FF8C61'] as [string, string],
-    title: 'Você consegue!',
-    subtitle: 'Junte-se à comunidade Meu Best e dê o primeiro passo rumo ao seu melhor.',
+    title: 'Chegou a hora. ✨',
+    subtitle:
+      'Clique em “Começar” e descubra um espaço seguro para compartilhar, aprender e evoluir.\n\nO Meu.Best nasceu para conectar pessoas através do cuidado, da escuta e do apoio humano, com uma rede formada por voluntários.',
   },
 ];
 
@@ -131,7 +132,7 @@ export function OnboardingScreen() {
 
                 <View style={styles.actions}>
                   <Button
-                    label={isLast ? 'Começar Agora' : 'Próximo'}
+                    label={isLast ? 'Começar' : 'Próximo'}
                     onPress={handleNext}
                     size="lg"
                     variant="ghost"

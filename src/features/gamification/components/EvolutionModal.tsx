@@ -212,7 +212,7 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
                     </View>
                     <View style={styles.tipItem}>
                       <Text style={styles.tipEmoji}>🪙</Text>
-                      <Text style={styles.tipText}>Reconheça seus apoiadores enviando gorjetas e avaliações.</Text>
+                      <Text style={styles.tipText}>Reconheça seus apoiadores enviando retribuições e avaliações.</Text>
                     </View>
                     <View style={styles.tipItem}>
                       <Text style={styles.tipEmoji}>🚀</Text>

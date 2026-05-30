@@ -228,7 +228,7 @@ export function NotificationsModal({ visible, onClose, userId }: NotificationsMo
               </View>
               <Text style={styles.emptyTitle}>Tudo limpo por aqui!</Text>
               <Text style={styles.emptyDesc}>
-                Nenhuma notificação por enquanto. Avisaremos você sobre novas chamadas, agendamentos e gorjetas.
+                Nenhuma notificação por enquanto. Avisaremos você sobre novas chamadas, agendamentos e retribuições.
               </Text>
             </View>
           ) : (

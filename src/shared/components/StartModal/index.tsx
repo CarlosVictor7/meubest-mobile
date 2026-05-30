@@ -71,7 +71,7 @@ export function StartModal({ visible, onClose, onSelectTheme }: StartModalProps)
               </View>
               <View>
                 <Text style={modal.headerTitle}>COMEÇAR</Text>
-                <Text style={modal.headerSub}>Sobre o que você quer conversar?</Text>
+                <Text style={modal.headerSub}>Sobre o que você quer desabafar?</Text>
               </View>
             </View>
             <TouchableOpacity onPress={handleClose} style={modal.closeBtn}>
