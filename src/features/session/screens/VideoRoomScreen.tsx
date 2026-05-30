@@ -33,113 +33,185 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius } from '@constants/theme';
 import { InCallTipModal } from '@features/session/components/InCallTipModal';
 
-// ─── JavaScript injetado na WebView para interceptar o hangup nativo do Jitsi ──
-// Quando o usuário clica no botão vermelho nativo do Jitsi, dispara
-// window.ReactNativeWebView.postMessage('JITSI_HANGUP')
-// Funciona monitorando: evento jitsi 'readyToClose', evento 'videoConferenceLeft',
-// e como fallback, clique no botão de hangup via MutationObserver.
+// ─── JavaScript injetado na WebView — Bridge Jitsi → React Native ──────────
+// Detecta:
+//   1. Hangup (botão vermelho) → envia JITSI_HANGUP
+//   2. Entrada real na reunião → envia JITSI_JOINED (multi-sinal robusto)
+//
+// Estratégia de JOINED:
+//   - Eventos postMessage do Jitsi: videoConferenceJoined / conferenceJoined
+//   - DOM guard: ausência de prejoin + presença de UI de conferência real
+//   - Polling periódico por até 120s
+//   - MutationObserver para capturar mudança de estado do DOM
 const JITSI_HANGUP_BRIDGE_JS = `
 (function() {
-  // Previne execução dupla em hot reload
-  if (window.__meubest_bridge_installed) return;
-  window.__meubest_bridge_installed = true;
+  if (window.__MEUBEST_BRIDGE) return;
+  window.__MEUBEST_BRIDGE = true;
+  window.__MEUBEST_JOINED = false;
 
+  // ── Enviar hangup para o RN ───────────────────────────────────────
   function sendHangup() {
     try {
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: 'JITSI_HANGUP',
-        origin: 'jitsi_webview'
-      }));
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_HANGUP', origin: 'jitsi_webview' }));
     } catch(e) {}
   }
 
-  // Método 1: API do Jitsi iframe (para meet.jit.si público)
-  // O Jitsi emite mensagens postMessage do tipo 'readyToClose' ou 'videoConferenceLeft'
+  // ── Enviar JOINED para o RN (uma única vez) ───────────────────────
+  function sendJoined() {
+    if (window.__MEUBEST_JOINED) return;
+    window.__MEUBEST_JOINED = true;
+    try {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+    } catch(e) {}
+  }
+
+  // ── Detectar tela de prejoin ──────────────────────────────────────
+  function isPrejoinVisible() {
+    try {
+      if (document.querySelector('[data-testid="prejoin.joinMeeting"]')) return true;
+      if (document.querySelector('.prejoin-preview-dropdown-btns')) return true;
+      if (document.querySelector('.prejoin-input-area')) return true;
+      if (document.querySelector('[aria-label*="Join meeting"]')) return true;
+
+      // Busca botões que contenham o texto 'join meeting'
+      var buttons = document.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++) {
+        var btnText = buttons[i].textContent || buttons[i].innerText || '';
+        if (btnText.toLowerCase().indexOf('join meeting') !== -1) {
+          return true;
+        }
+      }
+    } catch(e) {}
+    return false;
+  }
+
+  // ── Detectar UI real de conferência ──────────────────────────────
+  function hasConferenceUi() {
+    try {
+      if (document.querySelector('[data-testid="toolbar.hangup"]')) return true;
+      if (document.querySelector('.toolbox-button-red')) return true;
+      if (document.querySelector('.filmstrip')) return true;
+      if (document.querySelector('#filmstripRemoteVideos')) return true;
+      if (document.querySelector('[data-testid="filmstrip"]')) return true;
+      if (document.querySelector('[aria-label*="Leave"]')) return true;
+      if (document.querySelector('[aria-label*="Encerrar"]')) return true;
+    } catch(e) {}
+    return false;
+  }
+
+  // ── Lógica de emissão de JOINED ──────────────────────────────────
+  function tryEmitJoined() {
+    if (window.__MEUBEST_JOINED) return;
+    if (!isPrejoinVisible() && hasConferenceUi()) {
+      // Dupla confirmação após 1.5s para evitar falso positivo transitório
+      setTimeout(function() {
+        if (!window.__MEUBEST_JOINED && !isPrejoinVisible() && hasConferenceUi()) {
+          sendJoined();
+        }
+      }, 1500);
+    }
+  }
+
+  // ── Eventos postMessage do Jitsi ──────────────────────────────────
   window.addEventListener('message', function(event) {
     try {
       var data = event.data;
-      if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch(e) {}
-      }
-      if (data && (data.action === 'readyToClose' || data.action === 'videoConferenceLeft')) {
+      if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
+      if (!data) return;
+      // Hangup
+      if (data.action === 'readyToClose' || data.action === 'videoConferenceLeft') {
         sendHangup();
       }
-      if (data && (data.action === 'videoConferenceJoined' || data.action === 'conferenceJoined')) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
+      // Joined (sinal primário — mais confiável)
+      if (data.action === 'videoConferenceJoined' || data.action === 'conferenceJoined' || data.action === 'participantJoined') {
+        // Confirma que não estamos em prejoin antes de emitir
+        if (!isPrejoinVisible()) {
+          sendJoined();
+        } else {
+          // Se ainda estiver em prejoin, tenta de novo após 2s
+          setTimeout(tryEmitJoined, 2000);
+        }
       }
     } catch(e) {}
   });
 
-  // Método 2: MutationObserver — observa quando o botão de hangup aparece e intercepta o clique
-  // O botão nativo do Jitsi tem aria-label 'Leave the call' ou classe que contém 'hangup'
+  // ── Anexar listener ao botão de hangup ───────────────────────────
   function attachHangupListener() {
     var hangupBtn = document.querySelector('[data-testid="toolbar.hangup"]')
       || document.querySelector('[aria-label*="Leave"]')
       || document.querySelector('[aria-label*="Encerrar"]')
       || document.querySelector('[aria-label*="leave"]')
       || document.querySelector('.toolbox-button-red');
-    
     if (hangupBtn && !hangupBtn.__meubest_listener) {
       hangupBtn.__meubest_listener = true;
       hangupBtn.addEventListener('click', function() {
-        // Delay mínimo para Jitsi processar o clique antes de notificar o RN
         setTimeout(sendHangup, 300);
       }, true);
     }
   }
 
-  // Detectar cliques na tela para o auto-hide
+  // ── Anexar listener ao botão de join meeting (prejoin) ───────────
+  function attachPrejoinListener() {
+    try {
+      var joinBtn = document.querySelector('[data-testid="prejoin.joinMeeting"]')
+        || document.querySelector('[aria-label*="Join meeting"]')
+        || document.querySelector('.prejoin-input-area button');
+
+      if (!joinBtn) {
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+          var btnText = buttons[i].textContent || buttons[i].innerText || '';
+          if (btnText.toLowerCase().indexOf('join meeting') !== -1) {
+            joinBtn = buttons[i];
+            break;
+          }
+        }
+      }
+
+      if (joinBtn && !joinBtn.__meubest_prejoin_listener) {
+        joinBtn.__meubest_prejoin_listener = true;
+        joinBtn.addEventListener('click', function() {
+          try {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOIN_CLICKED' }));
+          } catch(e) {}
+        }, true);
+      }
+    } catch(e) {}
+  }
+
+  // ── Cliques na tela ───────────────────────────────────────────────
   document.addEventListener('click', function() {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' }));
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' })); } catch(e) {}
   }, true);
   document.addEventListener('touchstart', function() {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' }));
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_CLICKED' })); } catch(e) {}
   }, { passive: true, capture: true });
 
-  // Observa mudanças no DOM para capturar o botão quando o Jitsi terminar de carregar
-  var observer = new MutationObserver(function() {
+  // ── MutationObserver — detecta mudanças de estado do DOM ─────────
+  var mutationObserver = new MutationObserver(function() {
     attachHangupListener();
+    attachPrejoinListener();
+    tryEmitJoined();
   });
-  observer.observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+  mutationObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
-  // Tentativa imediata
-  attachHangupListener();
-
-  // Método 3: Polling de fallback a cada 2s por 60s após carregamento
+  // ── Polling de fallback — a cada 2s por até 120s ──────────────────
   var pollCount = 0;
-  var poll = setInterval(function() {
+  var pollMax = 60; // 60 * 2s = 120s
+  var pollInterval = setInterval(function() {
     attachHangupListener();
+    attachPrejoinListener();
+    tryEmitJoined();
     pollCount++;
-    
-    // Fallback de JOINED seguro
-    if (!window.__meubest_joined_sent) {
-      var hangupBtn = document.querySelector('[data-testid="toolbar.hangup"]')
-        || document.querySelector('[aria-label*="Leave"]')
-        || document.querySelector('.toolbox-button-red');
-        
-      var isPreJoin = document.querySelector('[aria-label*="Join meeting"]')
-        || document.querySelector('.prejoin-preview-dropdown-btns')
-        || document.querySelector('.prejoin-input-area')
-        || document.querySelector('[data-testid="prejoin.joinMeeting"]');
-
-      if (hangupBtn && !isPreJoin) {
-        // Se parece ter entrado, aguarda 1.5s para confirmar que não é um piscar da tela prejoin
-        setTimeout(function() {
-          var stillPreJoin = document.querySelector('[aria-label*="Join meeting"]')
-            || document.querySelector('.prejoin-preview-dropdown-btns');
-          if (!stillPreJoin && !window.__meubest_joined_sent) {
-            window.__meubest_joined_sent = true;
-            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'JITSI_JOINED' }));
-          }
-        }, 1500);
-      }
+    if (pollCount >= pollMax || window.__MEUBEST_JOINED) {
+      clearInterval(pollInterval);
     }
-
-    if (pollCount >= 30) clearInterval(poll);
   }, 2000);
+
+  // ── Tentativa imediata ────────────────────────────────────────────
+  attachHangupListener();
+  attachPrejoinListener();
+  tryEmitJoined();
 
   true; // Necessário para iOS
 })();
@@ -182,6 +254,7 @@ export function VideoRoomScreen() {
   const webViewRef = useRef<WebView>(null);
   // Ref como guard: evita duplo encerramento pelo botão custom + botão nativo do Jitsi
   const isEndingCallRef = useRef(false);
+  const overlayFallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── Overlay inferior (gorjeta/denúncia) — auto-hide ──────────────────
   // Auto-hide temporariamente desativado para garantir visibilidade 100% durante a chamada.
@@ -190,10 +263,16 @@ export function VideoRoomScreen() {
     // Mantido como função vazia para evitar quebras em chamadas antigas.
   }, []);
 
+  const markMeetingJoined = useCallback((source: string) => {
+    console.log('[JITSI_OVERLAY] joined via:', source);
+    setHasJoinedMeeting(true);
+  }, []);
+
   // ─── Determinar papel do usuário na sessão ───────────────────────────
-  // isSpeaker: usuário que buscou a sessão (pode dar gorjeta ao apoiador)
-  const isSpeaker =
-    profile?.role === 'speaker' || session?.speakerId === user?.uid;
+  // isCurrentUserSpeaker: usa speakerId do Firestore como fonte de verdade.
+  // Nunca usa profile.role para lógica de exibição — evita race condition
+  // quando o usuário muda de papel entre sessões.
+  const isCurrentUserSpeaker = session != null && user != null && session.speakerId === user.uid;
 
   // ─── Timer da Sessão ────────────────────────────────────────────────
   useEffect(() => {
@@ -205,6 +284,16 @@ export function VideoRoomScreen() {
     }, 1000);
     return () => clearInterval(interval);
   }, [sessionStartTime]);
+
+  // ─── Limpar temporizador fallback ao desmontar a tela ────────────────
+  useEffect(() => {
+    return () => {
+      if (overlayFallbackTimerRef.current) {
+        clearTimeout(overlayFallbackTimerRef.current);
+        overlayFallbackTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // ─── Solicitar Permissões Câmera e Microfone ──────────────────────────
   useEffect(() => {
@@ -360,22 +449,38 @@ export function VideoRoomScreen() {
   const handleWebViewMessage = useCallback(
     (event: { nativeEvent: { data: string } }) => {
       try {
-        const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === 'JITSI_HANGUP') {
+        const raw = event.nativeEvent.data;
+        let typeVal = '';
+        let dataObj: any = null;
+
+        try {
+          dataObj = JSON.parse(raw);
+          typeVal = dataObj?.type || '';
+        } catch (_) {
+          typeVal = typeof raw === 'string' ? raw : '';
+        }
+
+        const isJoined = typeVal === 'JITSI_JOINED' || raw === 'JITSI_JOINED' || dataObj === 'JITSI_JOINED';
+        const isJoinClicked = typeVal === 'JITSI_JOIN_CLICKED' || raw === 'JITSI_JOIN_CLICKED' || dataObj === 'JITSI_JOIN_CLICKED';
+        const isHangup = typeVal === 'JITSI_HANGUP' || raw === 'JITSI_HANGUP' || dataObj === 'JITSI_HANGUP';
+
+        if (isHangup) {
           console.log('[CallEnd] jitsi native hangup detected');
           completeSessionAndExit('jitsi_native_hangup');
-        } else if (msg.type === 'JITSI_JOINED') {
-          if (!hasJoinedMeeting) {
-            console.log('[VideoRoom] JITSI_JOINED detected');
-            setHasJoinedMeeting(true);
-            showOverlay();
-          }
-        } else if (msg.type === 'JITSI_CLICKED') {
-          showOverlay();
+        } else if (isJoined) {
+          markMeetingJoined('bridge_joined');
+        } else if (isJoinClicked) {
+          console.log('[VideoRoom] JITSI_JOIN_CLICKED received — starting 2.5s fallback timer to set hasJoinedMeeting=true');
+          setTimeout(() => {
+            if (webViewVisible && !isEndingCallRef.current) {
+              markMeetingJoined('bridge_join_clicked_2500ms');
+            }
+          }, 2500);
         }
+        // JITSI_CLICKED ignorado — auto-hide desativado
       } catch (_) {}
     },
-    [completeSessionAndExit, showOverlay, hasJoinedMeeting]
+    [completeSessionAndExit, webViewVisible, markMeetingJoined]
   );
 
   // ─── Denúncia ───────────────────────────────────────────────────────
@@ -478,6 +583,14 @@ export function VideoRoomScreen() {
               // Injeta o script ANTES do content para garantir que os listeners estejam prontos
               injectedJavaScriptBeforeContentLoaded={JITSI_HANGUP_BRIDGE_JS}
               onMessage={handleWebViewMessage}
+              onLoadEnd={() => {
+                if (overlayFallbackTimerRef.current) {
+                  clearTimeout(overlayFallbackTimerRef.current);
+                }
+                overlayFallbackTimerRef.current = setTimeout(() => {
+                  markMeetingJoined('fallback_timer_8s');
+                }, 8000);
+              }}
               onShouldStartLoadWithRequest={(request) => {
                 const url = request.url || '';
                 if (
@@ -545,23 +658,24 @@ export function VideoRoomScreen() {
         <Text style={styles.timerPillText}>{elapsedText}</Text>
       </View>
 
-      {/* ── Overlay inferior — Gorjeta + Denúncia (sempre visível após joined) ── */}
-      {session && hasJoinedMeeting && webViewVisible && (
+      {/* ── Overlay inferior — Retribuição + Denúncia ─────────────────
+           Regra de exibição:
+           - Aparece SOMENTE após entrar de fato na reunião (hasJoinedMeeting=true)
+           - Permanece visível o tempo todo durante a chamada (sem auto-hide)
+           - Speaker (speakerId === user.uid): vê Retribuição + Denúncia
+           - Listener (listenerId === user.uid): vê APENAS Denúncia
+           Os modais abrem por cima sem desmontar a WebView.
+      ── */}
+      {hasJoinedMeeting && webViewVisible && session && (
         <View
-          style={[
-            styles.bottomOverlay,
-            { bottom: overlayBottom },
-          ]}
+          style={[styles.bottomOverlay, { bottom: overlayBottom }]}
           pointerEvents="box-none"
         >
-          {/* Botão Gorjeta — apenas speaker */}
-          {isSpeaker && (
+          {/* Botão Retribuição — apenas speaker/desabafador */}
+          {isCurrentUserSpeaker && (
             <TouchableOpacity
               style={styles.overlayBtn}
-              onPress={() => {
-                showOverlay();
-                setIsTipModalOpen(true);
-              }}
+              onPress={() => setIsTipModalOpen(true)}
               activeOpacity={0.85}
               accessibilityLabel="Enviar retribuição"
             >
@@ -569,13 +683,10 @@ export function VideoRoomScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Botão Denunciar */}
+          {/* Botão Denunciar — visível para todos (speaker e listener) */}
           <TouchableOpacity
             style={[styles.overlayBtn, styles.overlayBtnReport]}
-            onPress={() => {
-              showOverlay();
-              setIsReportModalOpen(true);
-            }}
+            onPress={() => setIsReportModalOpen(true)}
             activeOpacity={0.85}
             accessibilityLabel="Denunciar usuário"
           >
@@ -584,8 +695,8 @@ export function VideoRoomScreen() {
         </View>
       )}
 
-      {/* ── Modal de Gorjeta In-Call ── */}
-      {isSpeaker && (
+      {/* ── Modal de Retribuição In-Call (apenas speaker) ── */}
+      {isCurrentUserSpeaker && (
         <InCallTipModal
           visible={isTipModalOpen}
           onClose={() => setIsTipModalOpen(false)}
