@@ -13,7 +13,7 @@ web-build/
 
 # Arquivos de configuração do Google (Firebase — contêm chaves privadas)
 # google-services.json # Permitido para EAS Cloud Build
-GoogleService-Info.plist
+# GoogleService-Info.plist # Permitido para EAS Cloud Build
 
 # EAS
 .eas/

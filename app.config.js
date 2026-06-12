@@ -4,7 +4,7 @@ module.exports = {
   name: IS_DEV ? 'Meu Best (Dev)' : 'Meu Best',
   slug: 'meubest',
   scheme: 'meubest',
-  version: '1.0.0',
+  version: '1.0.1',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
@@ -17,14 +17,15 @@ module.exports = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    buildNumber: '1.0.0',
+    buildNumber: '1.0.1',
     infoPlist: {
       NSCameraUsageDescription: 'Meu Best usa sua câmera para sessões de apoio em vídeo.',
       NSMicrophoneUsageDescription: 'Meu Best usa seu microfone para sessões de apoio em áudio/vídeo.',
       NSPhotoLibraryUsageDescription: 'Meu Best usa sua galeria para você atualizar sua foto de perfil.',
       NSUserTrackingUsageDescription: 'Meu Best usa dados para melhorar sua experiência na plataforma.',
+      ITSAppUsesNonExemptEncryption: false,
     },
-    // googleServicesFile: './GoogleService-Info.plist',  // Uncomment when file is added
+    googleServicesFile: './GoogleService-Info.plist',
   },
   android: {
     adaptiveIcon: {
@@ -32,7 +33,7 @@ module.exports = {
       backgroundColor: '#FDF8F5',
     },
     package: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    versionCode: 3,
+    versionCode: 4,
     googleServicesFile: './google-services.json',
     permissions: [
       'android.permission.CAMERA',
@@ -63,7 +64,12 @@ module.exports = {
         photosPermission: 'O Meu Best precisa de acesso à sua galeria para atualizar sua foto de perfil.',
       },
     ],
-    '@react-native-google-signin/google-signin',
+    [
+      '@react-native-google-signin/google-signin',
+      {
+        iosUrlScheme: 'com.googleusercontent.apps.665557596754-7m76ie802scgi6edc338cs14u0ubt1sj'
+      }
+    ],
   ],
   extra: {
     firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
