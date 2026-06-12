@@ -217,6 +217,48 @@ const JITSI_HANGUP_BRIDGE_JS = `
 })();
 `;
 
+// ─── CSS injetado na WebView após carregamento (onLoadEnd) ───────────────────
+// Tarefas 2, 3 e 4:
+//   - Oculta o header/subject da sala do Jitsi (barra superior com nome da sala)
+//   - Oculta o watermark/logo do Jitsi
+//   - Adiciona safe area padding-top no painel de chat (iOS Dynamic Island/notch)
+// Recebe safeAreaTop como parâmetro para não depender de estado do React.
+function buildJitsiCleanupCss(safeAreaTop: number): string {
+  return `
+(function(topInset) {
+  if (window.__MEUBEST_CSS) return;
+  window.__MEUBEST_CSS = true;
+
+  var style = document.createElement('style');
+  style.id = '__meubest_cleanup';
+  style.innerHTML = [
+    /* ── Ocultar header/subject da sala (barra superior do Jitsi) ── */
+    '.subject { display: none !important; }',
+    '.subject-info-container { display: none !important; }',
+    '[data-testid="subject"] { display: none !important; }',
+    '#subject { display: none !important; }',
+    '.jitsi-branding-container { display: none !important; }',
+    /* ── Ocultar watermark/logo Jitsi ── */
+    '.watermark { display: none !important; }',
+    '.leftwatermark { display: none !important; }',
+    '.rightwatermark { display: none !important; }',
+    '#jitsiWatermark { display: none !important; }',
+    'a[href*="jitsi"] img { display: none !important; }',
+    '.poweredby { display: none !important; }',
+    /* ── Safe area do chat (iOS Dynamic Island / notch) ── */
+    '.chat-panel { padding-top: ' + topInset + 'px !important; box-sizing: border-box !important; }',
+    '.chat-header { padding-top: ' + topInset + 'px !important; box-sizing: border-box !important; }',
+    '[class*="chatHeader"] { padding-top: ' + topInset + 'px !important; box-sizing: border-box !important; }',
+    '[data-testid="chat-panel-header"] { padding-top: ' + topInset + 'px !important; box-sizing: border-box !important; }',
+    '.sidebarHeader { padding-top: ' + topInset + 'px !important; box-sizing: border-box !important; }'
+  ].join(' ');
+
+  (document.head || document.documentElement).appendChild(style);
+  true;
+})(${safeAreaTop});
+`;
+}
+
 const REPORT_REASONS = [
   'Abuso / Assédio',
   'Racismo',
@@ -546,11 +588,14 @@ export function VideoRoomScreen() {
   const jitsiDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
   const jitsiBaseUrl = jitsiDomain.startsWith('http') ? jitsiDomain : `https://${jitsiDomain}`;
   const jitsiRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
-  const displayName = encodeURIComponent(profile?.name || 'Acolhedor/Ouvinte');
+  // Usar apenas o primeiro nome para evitar exibição de '%20' na interface do Jitsi.
+  // encodeURIComponent é aplicado somente no primeiro nome, sem espaços.
+  const firstName = (profile?.name || 'Usuário').split(' ')[0];
+  const displayName = encodeURIComponent(firstName);
   // config.startWithAudioMuted=false garante que o microfone não inicia mudo.
   // config.startWithVideoMuted=false garante que a câmera não inicia desligada.
-  // Não usar interfaceConfig.TOOLBAR_BUTTONS como string — pode ser ignorado pelo servidor.
-  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&interfaceConfig.MOBILE_APP_PROMO=false&userInfo.displayName="${displayName}"`;
+  // interfaceConfig.SHOW_JITSI_WATERMARK=false oculta o logo do Jitsi via config da URL.
+  const jitsiUrl = `${jitsiBaseUrl}/${jitsiRoomName}#config.prejoinPageEnabled=false&config.disableDeepLinking=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&interfaceConfig.MOBILE_APP_PROMO=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false&interfaceConfig.SHOW_BRAND_WATERMARK=false&userInfo.displayName="${displayName}"`;
 
   // Timer mínimo pill — posição absoluta acima do notch
   const timerTop = insets.top + 8;
@@ -590,6 +635,11 @@ export function VideoRoomScreen() {
                 overlayFallbackTimerRef.current = setTimeout(() => {
                   markMeetingJoined('fallback_timer_8s');
                 }, 8000);
+                // Injeta CSS de limpeza: oculta header/watermark do Jitsi
+                // e corrige safe area do chat no iOS (Dynamic Island / notch).
+                if (webViewRef.current) {
+                  webViewRef.current.injectJavaScript(buildJitsiCleanupCss(insets.top));
+                }
               }}
               onShouldStartLoadWithRequest={(request) => {
                 const url = request.url || '';

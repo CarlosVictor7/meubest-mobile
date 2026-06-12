@@ -326,7 +326,7 @@ export function InCallTipModal({
         </Text>
 
         <View style={styles.grid}>
-          {[10, 20, 50].map((val) => (
+          {[10, 20, 50, 100, 200, 300].map((val) => (
             <TouchableOpacity
               key={val}
               style={[
@@ -340,6 +340,7 @@ export function InCallTipModal({
               <Text style={[styles.optionVal, selectedOption === val && styles.optionTextSelected]}>{val}</Text>
             </TouchableOpacity>
           ))}
+          {/* "Outro Valor" em linha própria para responsividade */}
           <TouchableOpacity
             style={[
               styles.optionCard,
@@ -509,6 +510,7 @@ const styles = StyleSheet.create({
   optionCard: {
     flex: 1,
     minWidth: '28%',
+    maxWidth: '33%',
     height: 50,
     borderRadius: borderRadius.lg,
     borderWidth: 2,
@@ -519,7 +521,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   customOptionCard: {
-    flex: 1.2,
+    // Ocupa linha completa para o botão "Outro Valor"
+    flex: 0,
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: '100%',
   },
   optionCardSelected: {
     backgroundColor: colors.primary,
