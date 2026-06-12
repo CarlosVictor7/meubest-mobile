@@ -70,6 +70,23 @@ module.exports = {
         iosUrlScheme: 'com.googleusercontent.apps.665557596754-7m76ie802scgi6edc338cs14u0ubt1sj'
       }
     ],
+    [
+      'expo-build-properties',
+      {
+        ios: {
+          extraPods: [
+            {
+              name: 'GoogleUtilities',
+              modular_headers: true
+            },
+            {
+              name: 'RecaptchaInterop',
+              modular_headers: true
+            }
+          ]
+        }
+      }
+    ]
   ],
   extra: {
     firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
