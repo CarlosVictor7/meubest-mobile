@@ -13,6 +13,7 @@ import {
   TextInput,
   Animated,
   TouchableWithoutFeedback,
+  AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
@@ -324,8 +325,76 @@ export function VideoRoomScreen() {
       const s = String(seconds % 60).padStart(2, '0');
       setElapsedText(`${m}:${s}`);
     }, 1000);
-    return () => clearInterval(interval);
   }, [sessionStartTime]);
+
+  // ─── Heartbeat da Chamada e Sincronização de AppState ───────────────
+  // Mantém os batimentos e registra os timestamps e estados quando o app entra/sai de background
+  useEffect(() => {
+    if (!hasJoinedMeeting || !session || !user || isEndingCallRef.current) return;
+
+    let heartbeatInterval: NodeJS.Timeout | null = null;
+
+    const sendPulse = async (customState?: 'active' | 'background') => {
+      if (isEndingCallRef.current) return;
+
+      try {
+        const updateData: any = {};
+        const currentState = customState || (AppState.currentState === 'active' ? 'active' : 'background');
+
+        if (isCurrentUserSpeaker) {
+          updateData.lastSeenSpeaker = serverTimestamp();
+          updateData.speakerAppState = currentState;
+          if (customState === 'background') {
+            updateData.speakerBackgroundedAt = serverTimestamp();
+          } else if (customState === 'active') {
+            updateData.speakerForegroundedAt = serverTimestamp();
+          }
+        } else {
+          updateData.lastSeenListener = serverTimestamp();
+          updateData.listenerAppState = currentState;
+          if (customState === 'background') {
+            updateData.listenerBackgroundedAt = serverTimestamp();
+          } else if (customState === 'active') {
+            updateData.listenerForegroundedAt = serverTimestamp();
+          }
+        }
+
+        console.log(`[Heartbeat] Enviando pulso (${currentState}) para a sessão:`, sessionId);
+        await updateDoc(doc(db, 'sessions', sessionId), updateData);
+      } catch (e) {
+        console.warn('[Heartbeat] Falha ao enviar pulso de presença:', e);
+      }
+    };
+
+    // Envia o primeiro pulso imediatamente
+    sendPulse('active');
+
+    // Mantém atualizações periódicas a cada 8 segundos
+    heartbeatInterval = setInterval(() => {
+      // Nota: No iOS, se o Javascript for pausado pelo OS em background,
+      // este loop de intervalo cessará de rodar naturalmente. O estado de background
+      // já terá sido registrado no Firestore pelo evento de AppState abaixo.
+      sendPulse();
+    }, 8000);
+
+    // Escuta transições de estado do aplicativo (Background / Active)
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'background') {
+        console.log('[Heartbeat] App foi para background. Sincronizando estado imediatamente.');
+        sendPulse('background');
+      } else if (nextAppState === 'active') {
+        console.log('[Heartbeat] App retornou para active. Sincronizando estado imediatamente.');
+        sendPulse('active');
+      }
+    };
+
+    const appStateSub = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      appStateSub.remove();
+    };
+  }, [hasJoinedMeeting, session?.id, user?.uid, isCurrentUserSpeaker]);
 
   // ─── Limpar temporizador fallback ao desmontar a tela ────────────────
   useEffect(() => {

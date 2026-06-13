@@ -141,8 +141,11 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
             </TouchableOpacity>
           </View>
 
-          {/* Conteúdo Principal com Scroll */}
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView
+            style={styles.scrollView}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
             
             {/* 1. Card de Progresso / Nível */}
             <View style={styles.levelCard}>
@@ -401,9 +404,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     gap: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing.xxl + 24,
   },
 
   // 1. Card de Nível

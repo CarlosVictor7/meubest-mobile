@@ -1,6 +1,7 @@
 import { useAuthStore } from '@shared/stores/authStore';
 import { signOut } from 'firebase/auth';
-import { auth } from '@shared/services/firebase';
+import { auth, db } from '@shared/services/firebase';
+import { doc, updateDoc, deleteField } from 'firebase/firestore';
 
 /** Hook conveniente para acessar auth state — padrão igual à web */
 export function useAuth() {
@@ -12,6 +13,17 @@ export function useAuth() {
 
   const logout = async () => {
     try {
+      if (user) {
+        // Limpa as credenciais de push no banco antes do signOut
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+          pushToken: deleteField(),
+          pushTokenPlatform: deleteField(),
+          pushTokenUpdatedAt: deleteField(),
+        }).catch((e) => {
+          console.warn('[useAuth] Falha ao limpar push token no Firestore durante logout:', e);
+        });
+      }
       await signOut(auth);
       useAuthStore.getState().clear();
     } catch (error) {

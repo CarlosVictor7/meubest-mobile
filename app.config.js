@@ -17,13 +17,14 @@ module.exports = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    buildNumber: '1.0.2',
+    buildNumber: '1.0.4',
     infoPlist: {
       NSCameraUsageDescription: 'Meu Best usa sua câmera para sessões de apoio em vídeo.',
       NSMicrophoneUsageDescription: 'Meu Best usa seu microfone para sessões de apoio em áudio/vídeo.',
       NSPhotoLibraryUsageDescription: 'Meu Best usa sua galeria para você atualizar sua foto de perfil.',
       NSUserTrackingUsageDescription: 'Meu Best usa dados para melhorar sua experiência na plataforma.',
       ITSAppUsesNonExemptEncryption: false,
+      UIBackgroundModes: ['audio'],
     },
     googleServicesFile: './GoogleService-Info.plist',
   },
@@ -33,7 +34,7 @@ module.exports = {
       backgroundColor: '#FDF8F5',
     },
     package: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    versionCode: 4,
+    versionCode: 5,
     googleServicesFile: './google-services.json',
     permissions: [
       'android.permission.CAMERA',
@@ -42,6 +43,9 @@ module.exports = {
       'android.permission.INTERNET',
       'android.permission.VIBRATE',
       'android.permission.RECEIVE_BOOT_COMPLETED',
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+      'android.permission.WAKE_LOCK',
     ],
   },
   web: {

@@ -45,4 +45,7 @@ export interface UserProfile {
   createdAt?: string;
   updatedAt?: string;
   isAdult?: boolean;
+  pushToken?: string;
+  pushTokenPlatform?: string;
+  pushTokenUpdatedAt?: string;
 }
