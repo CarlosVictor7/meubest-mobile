@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "meubest-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\carlo\\OneDrive\\Documentos\\meubest", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "meubest-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:\\Users\\carlo\\OneDrive\\Documentos\\meubest-api", "run", "dev"],
+      "port": 3333
+    },
+    {
+      "name": "expo-start",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start"],
+      "port": 8081
+    },
+    {
+      "name": "expo-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "web"],
+      "port": 8081
+    }
+  ]
+}

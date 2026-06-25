@@ -8,10 +8,18 @@ interface AuthState {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   loading: boolean;
+  /**
+   * profileError: true quando o Firestore retornou erro ao ler o perfil.
+   * Diferente de profile=null (que significa usuário genuinamente sem perfil).
+   * NUNCA é persistido no AsyncStorage — reseta a cada restart do app.
+   * Quando true, o RootNavigator mostra tela de erro em vez de ProfileForm.
+   */
+  profileError: boolean;
   // Actions
   setUser: (user: FirebaseUser | null) => void;
   setProfile: (profile: UserProfile | null) => void;
   setLoading: (loading: boolean) => void;
+  setProfileError: (error: boolean) => void;
   clear: () => void;
   // Computed
   isAdmin: () => boolean;
@@ -24,11 +32,13 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       profile: null,
       loading: false, // AuthProvider define como true ao iniciar e false após resolver
+      profileError: false,
 
       setUser: (user) => set({ user }),
       setProfile: (profile) => set({ profile }),
       setLoading: (loading) => set({ loading }),
-      clear: () => set({ user: null, profile: null, loading: false }),
+      setProfileError: (profileError) => set({ profileError }),
+      clear: () => set({ user: null, profile: null, loading: false, profileError: false }),
 
       isAdmin: () => {
         const { profile, user } = get();
@@ -43,7 +53,8 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'meubest-auth',
       storage: createJSONStorage(() => AsyncStorage),
-      // Não persistir loading nem o objeto FirebaseUser completo (não serializável)
+      // Não persistir loading, profileError nem o objeto FirebaseUser completo
+      // profileError deve resetar a cada restart — o usuário pode tentar novamente
       partialize: (state) => ({
         profile: state.profile,
       }),

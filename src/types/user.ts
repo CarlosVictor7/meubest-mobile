@@ -10,7 +10,6 @@ export interface BankDetails {
   pixKeyType?: string;
 }
 
-
 export interface UserProfile {
   uid: string;
   name: string;
@@ -48,4 +47,15 @@ export interface UserProfile {
   pushToken?: string;
   pushTokenPlatform?: string;
   pushTokenUpdatedAt?: string;
+  // ── Auth provider ───────────────────────────────────────────────
+  /** Provider primário usado no primeiro login: 'google' | 'apple' | 'unknown' */
+  authProvider?: 'google' | 'apple' | 'unknown';
+  /** Lista de provider IDs vinculados à conta Firebase (ex: ['google.com', 'apple.com']) */
+  providerIds?: string[];
+  /**
+   * E-mail de relay privado da Apple (ex: xyz@privaterelay.appleid.com).
+   * A Apple fornece esse e-mail quando o usuário escolhe "Ocultar meu e-mail".
+   * Armazenado separadamente para não sobrescrever o campo `email` principal.
+   */
+  applePrivateEmail?: string;
 }

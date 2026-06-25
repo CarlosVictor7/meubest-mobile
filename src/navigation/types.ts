@@ -59,6 +59,7 @@ export type ProfileStackParamList = {
 export type RootStackParamList = {
   Auth: undefined;
   ProfileForm: undefined;
+  ProfileError: undefined;  // Tela de erro quando Firestore falha transitoriamente
   App: undefined;
   Session: { sessionId: string }; // Modal
 };

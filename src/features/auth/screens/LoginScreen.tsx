@@ -1,12 +1,11 @@
 /**
  * LoginScreen — Tela única de autenticação do Meu Best
  *
- * Fluxo simplificado:
- * - Usuário abre o app → vê esta tela
- * - Único método: "Continuar com Google"
- * - role padrão: 'speaker' (pode ser alterado depois na home)
+ * Fluxo:
+ * - iOS: "Continuar com Apple" (primário, guideline Apple) + "Continuar com Google"
+ * - Android/Web: "Continuar com Google" (primário) + "Continuar com Apple"
  * - Usuário existente: mantém perfil salvo no Firestore
- * - Novo usuário: cria perfil mínimo com role='speaker'
+ * - Novo usuário: cria perfil mínimo
  */
 import React, { useState } from 'react';
 import {
@@ -24,12 +23,13 @@ import { Heart, MessageCircle, Shield } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { signInWithGoogle } from '@shared/services/googleAuth';
+import { signInWithApple, isAppleSignInSupported } from '@shared/services/appleAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 
-// Necessário para fechar o browser ao retornar ao app
+// Necessário para fechar o browser ao retornar ao app (OAuth redirect)
 WebBrowser.maybeCompleteAuthSession();
 
-// ─── Ícone Google SVG inline (sem dependência externa) ───────────────
+// ─── Ícone Google SVG inline ──────────────────────────────────────────
 function GoogleIcon() {
   return (
     <View style={gIcon.wrap}>
@@ -55,6 +55,32 @@ const gIcon = StyleSheet.create({
   },
 });
 
+// ─── Ícone Apple inline ───────────────────────────────────────────────
+function AppleIcon() {
+  return (
+    <View style={aIcon.wrap}>
+      {/* Logo Apple simplificado em texto — sem dependência de ícone externo */}
+      <Text style={aIcon.text}></Text>
+    </View>
+  );
+}
+
+const aIcon = StyleSheet.create({
+  wrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    fontSize: 18,
+    color: '#fff',
+    lineHeight: 22,
+  },
+});
+
 // ────────────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
   const [loading, setLoading] = useState(false);
@@ -62,11 +88,11 @@ export function LoginScreen() {
 
   // ── Login Google ─────────────────────────────────────────────────
   const handleGooglePress = async () => {
+    if (loading) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     setStatus('Autenticando…');
 
-    // role padrão 'speaker' — usuário existente mantém o próprio role
     const result = await signInWithGoogle('speaker');
 
     if (result.type === 'expoGoLimitation') {
@@ -94,6 +120,43 @@ export function LoginScreen() {
     }
 
     // Success — RootNavigator cuida da transição de estado automaticamente
+    setStatus('');
+  };
+
+  // ── Login Apple ──────────────────────────────────────────────────
+  const handleApplePress = async () => {
+    if (loading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLoading(true);
+    setStatus('Autenticando com Apple…');
+
+    const result = await signInWithApple('speaker');
+
+    if (result.type === 'notAvailable') {
+      setLoading(false);
+      setStatus('');
+      Alert.alert(
+        'Apple Sign-In indisponível',
+        'O login com Apple requer iOS 13 ou superior em um dispositivo físico.',
+        [{ text: 'Entendi', style: 'default' }]
+      );
+      return;
+    }
+
+    if (result.type === 'cancelled') {
+      setLoading(false);
+      setStatus('');
+      return;
+    }
+
+    if (result.type === 'error') {
+      setLoading(false);
+      setStatus('');
+      Alert.alert('Erro ao entrar com Apple', result.message);
+      return;
+    }
+
+    // Success — RootNavigator cuida da transição automaticamente
     setStatus('');
   };
 
@@ -154,16 +217,37 @@ export function LoginScreen() {
             {/* ─── Ações ────────────────────────────────────────────── */}
             <View style={styles.actions}>
 
-              {/* Botão principal Google */}
+              {/*
+               * Botão Apple — visível SOMENTE no iOS.
+               * No iOS fica acima do Google (obrigatório pela Apple Guideline 4.8).
+               * No Android está oculto (Apple Sign-In via popup/redirect não funciona
+               * em React Native — depende de window.open que não existe no ambiente nativo).
+               * Fase 2: implementar Android via AuthSession + deep link.
+               */}
+              {isAppleSignInSupported() && (
+                <TouchableOpacity
+                  onPress={handleApplePress}
+                  style={[styles.appleBtn, loading && styles.btnLoading]}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                >
+                  <AppleIcon />
+                  <Text style={styles.appleBtnText}>
+                    {loading && status.includes('Apple') ? (status || 'Aguarde…') : 'Continuar com Apple'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Botão Google — disponível em todas as plataformas */}
               <TouchableOpacity
                 onPress={handleGooglePress}
-                style={[styles.googleBtn, loading && styles.googleBtnLoading, shadows.primary]}
+                style={[styles.googleBtn, loading && styles.btnLoading, shadows.primary]}
                 activeOpacity={0.85}
                 disabled={loading}
               >
                 <GoogleIcon />
                 <Text style={styles.googleBtnText}>
-                  {loading ? (status || 'Aguarde…') : 'Continuar com Google'}
+                  {loading && !status.includes('Apple') ? (status || 'Aguarde…') : 'Continuar com Google'}
                 </Text>
               </TouchableOpacity>
 
@@ -304,6 +388,28 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+
+  // Botão Apple — preto conforme HIG da Apple
+  appleBtn: {
+    backgroundColor: '#000',
+    borderRadius: borderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md + 4,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
+    ...shadows.sm,
+  },
+  appleBtnText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.black,
+    color: '#fff',
+    letterSpacing: typography.tracking.wide,
+    textTransform: 'uppercase',
+  },
+
+  // Botão Google — cor primária do app
   googleBtn: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.full,
@@ -314,15 +420,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.sm,
   },
-  googleBtnLoading: {
-    opacity: 0.75,
-  },
   googleBtnText: {
     fontSize: typography.size.md,
     fontWeight: typography.weight.black,
     color: colors.textInverted,
     letterSpacing: typography.tracking.wide,
     textTransform: 'uppercase',
+  },
+
+  btnLoading: {
+    opacity: 0.75,
   },
 
   // ── Divisor
