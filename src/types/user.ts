@@ -17,6 +17,7 @@ export interface UserProfile {
   role: UserRole;
   bio?: string;
   city?: string;
+  state?: string;
   religion?: string;
   gender?: string;
   ageRange?: string;

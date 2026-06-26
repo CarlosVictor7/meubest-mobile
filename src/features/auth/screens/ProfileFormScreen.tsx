@@ -10,6 +10,8 @@ import {
   Alert,
   Animated,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +32,9 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { Button } from '@shared/components';
+import { SelectSheet } from '@shared/components/SelectSheet';
+import { BR_STATES, CITIES_BY_UF } from '@constants/brazilLocations';
+import { RELIGION_OPTIONS, RELIGION_OTHER } from '@constants/religions';
 
 const { width } = Dimensions.get('window');
 
@@ -68,8 +73,10 @@ export function ProfileFormScreen() {
     role: '' as 'speaker' | 'listener' | '',
     gender: '',
     ageRange: '',
-    city: '',
-    religion: '',
+    state: '',
+    cityName: '',
+    religionChoice: '',
+    religionOther: '',
     isAdult: false,
     interests: [] as string[],
   });
@@ -136,14 +143,24 @@ export function ProfileFormScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const userRef = doc(db, 'users', user.uid);
+      const city =
+        formData.state && formData.cityName
+          ? `${formData.cityName} - ${formData.state}`
+          : formData.cityName.trim();
+      const religion =
+        formData.religionChoice === RELIGION_OTHER
+          ? formData.religionOther.trim() || null
+          : formData.religionChoice || null;
+
       await setDoc(
         userRef,
         {
           role: formData.role,
           gender: formData.gender,
           ageRange: formData.ageRange,
-          city: formData.city.trim(),
-          religion: formData.religion.trim() || null,
+          state: formData.state || null,
+          city,
+          religion,
           interests: formData.interests,
           isAdult: true,
           isProfileComplete: true,
@@ -164,7 +181,8 @@ export function ProfileFormScreen() {
   const isStep2Valid =
     formData.gender !== '' &&
     formData.ageRange !== '' &&
-    formData.city.trim().length > 0 &&
+    formData.state !== '' &&
+    formData.cityName !== '' &&
     formData.isAdult;
   const isStep3Valid = formData.interests.length > 0;
 
@@ -199,6 +217,10 @@ export function ProfileFormScreen() {
         </View>
 
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+          <KeyboardAvoidingView
+            style={styles.kav}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scroll}
@@ -246,7 +268,7 @@ export function ProfileFormScreen() {
                           formData.role === 'speaker' ? { color: '#FFF' } : { color: colors.primary },
                         ]}
                       >
-                        QUERO FALAR
+                        QUERO DESABAFAR
                       </Text>
                       <Text
                         style={[
@@ -292,7 +314,7 @@ export function ProfileFormScreen() {
                           formData.role === 'listener' ? { color: '#FFF' } : { color: colors.primary },
                         ]}
                       >
-                        QUERO DESABAFAR
+                        QUERO ACOLHER
                       </Text>
                       <Text
                         style={[
@@ -379,30 +401,55 @@ export function ProfileFormScreen() {
                     </View>
                   </View>
 
+                  {/* Estado */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>ESTADO</Text>
+                    <SelectSheet
+                      value={formData.state}
+                      onChange={(uf) => setFormData((prev) => ({ ...prev, state: uf, cityName: '' }))}
+                      options={BR_STATES.map((s) => ({ value: s.uf, label: `${s.name} (${s.uf})` }))}
+                      placeholder="Selecione o estado"
+                      title="Selecione o estado"
+                    />
+                  </View>
+
                   {/* Cidade */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>CIDADE</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Sua cidade e UF"
-                      placeholderTextColor={colors.textMutedValue}
-                      value={formData.city}
-                      onChangeText={(city) => setFormData((prev) => ({ ...prev, city }))}
-                      autoCapitalize="words"
+                    <SelectSheet
+                      value={formData.cityName}
+                      onChange={(city) => setFormData((prev) => ({ ...prev, cityName: city }))}
+                      options={(CITIES_BY_UF[formData.state] || []).map((c) => ({ value: c, label: c }))}
+                      placeholder="Selecione a cidade"
+                      title="Selecione a cidade"
+                      disabled={!formData.state}
+                      disabledHint="Escolha o estado primeiro"
                     />
                   </View>
 
                   {/* Religião (Opcional) */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>RELIGIÃO / CRENÇA (OPCIONAL)</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Ex: Católica, Espírita, Agnóstica..."
-                      placeholderTextColor={colors.textMutedValue}
-                      value={formData.religion}
-                      onChangeText={(religion) => setFormData((prev) => ({ ...prev, religion }))}
-                      autoCapitalize="sentences"
+                    <SelectSheet
+                      value={formData.religionChoice}
+                      onChange={(r) => setFormData((prev) => ({ ...prev, religionChoice: r }))}
+                      options={RELIGION_OPTIONS.map((r) => ({ value: r, label: r }))}
+                      placeholder="Selecione (opcional)"
+                      title="Religião / Crença"
+                      searchable={false}
                     />
+                    {formData.religionChoice === RELIGION_OTHER && (
+                      <TextInput
+                        style={[styles.textInput, { marginTop: spacing.xs }]}
+                        placeholder="Qual?"
+                        placeholderTextColor={colors.textMutedValue}
+                        value={formData.religionOther}
+                        onChangeText={(religionOther) =>
+                          setFormData((prev) => ({ ...prev, religionOther }))
+                        }
+                        autoCapitalize="sentences"
+                      />
+                    )}
                   </View>
 
                   {/* Checkbox Maior de 18 */}
@@ -501,6 +548,7 @@ export function ProfileFormScreen() {
               </View>
             )}
           </ScrollView>
+          </KeyboardAvoidingView>
         </Animated.View>
       </SafeAreaView>
     </View>
@@ -585,6 +633,9 @@ const styles = StyleSheet.create({
 
   // Content
   content: {
+    flex: 1,
+  },
+  kav: {
     flex: 1,
   },
   scroll: {
