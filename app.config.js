@@ -17,7 +17,7 @@ module.exports = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    buildNumber: '1.1.0',
+    buildNumber: '1.1.1',
     infoPlist: {
       NSCameraUsageDescription: 'Meu Best usa sua câmera para sessões de apoio em vídeo.',
       NSMicrophoneUsageDescription: 'Meu Best usa seu microfone para sessões de apoio em áudio/vídeo.',
