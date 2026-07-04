@@ -115,6 +115,9 @@ export function MatchSearchScreen() {
         type: 'immediate', // Tipo da sessão
         duration: 15,
         price: 0,
+        // Lista de UIDs bloqueados pelo speaker — usada pelo filtro de chamadas recebidas
+        // do lado do listener (useIncomingCall) sem precisar de query extra.
+        speakerBlockedUserIds: profile.blockedUserIds ?? [],
         createdAt: serverTimestamp(),
       };
 

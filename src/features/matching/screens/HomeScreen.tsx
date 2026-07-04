@@ -52,6 +52,7 @@ import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_
 import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary } from '@shared/services/paymentService';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -69,12 +70,18 @@ const ROLE_OPTIONS = [
   },
 ];
 
-// ─── Dicas de Segurança ─────────────────────────────────────────────
-const SAFETY_TIPS = [
-  'Nunca compartilhe dados bancários fora da plataforma.',
-  'Mantenha as conversas dentro do ambiente seguro.',
-  'Denuncie qualquer comportamento inadequado.',
-];
+// ─── Dicas de Segurança ─────────────────────────────────────────────────────
+const SAFETY_TIPS = FINANCIAL_FEATURES_ENABLED
+  ? [
+      'Nunca compartilhe dados bancários fora da plataforma.',
+      'Mantenha as conversas dentro do ambiente seguro.',
+      'Denuncie qualquer comportamento inadequado.',
+    ]
+  : [
+      'Nunca compartilhe dados pessoais ou contato fora da plataforma.',
+      'Mantenha as conversas dentro do ambiente seguro.',
+      'Denuncie qualquer comportamento inadequado.',
+    ];
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
@@ -107,8 +114,9 @@ export function HomeScreen() {
     setIsOnline(profile?.isOnline ?? false);
   }, [profile?.isOnline]);
 
-  // Carrega walletSummary quando focado e no mount
+  // Carrega walletSummary apenas no Android (iOS compliance Guideline 1.1.4)
   useEffect(() => {
+    if (!FINANCIAL_FEATURES_ENABLED) return; // iOS: pular busca de saldo
     let active = true;
     const fetchSummary = async () => {
       try {
@@ -339,13 +347,16 @@ export function HomeScreen() {
               value={rating}
               icon={<Star size={20} color={colors.primary} strokeWidth={2} />}
             />
-            <StatsCard
-              label={isListener ? 'Retribuição Atual' : 'Saldo Recebido'}
-              value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
-              subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
-              icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
-              onPress={() => (navigation as any).navigate('WalletTab')}
-            />
+            {/* StatsCard de saldo apenas no Android (iOS compliance Guideline 1.1.4) */}
+            {FINANCIAL_FEATURES_ENABLED && (
+              <StatsCard
+                label={isListener ? 'Retribuição Atual' : 'Saldo Recebido'}
+                value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
+                subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
+                icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
+                onPress={() => (navigation as any).navigate('WalletTab')}
+              />
+            )}
           </View>
 
           {/* ═══════════════════════════════════════════════════════

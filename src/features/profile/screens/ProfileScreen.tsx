@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Linking,
 } from 'react-native';
 import {
   User,
@@ -16,12 +17,18 @@ import {
   Bell,
   Info,
   LogOut,
+  ShieldCheck,
+  Phone,
+  Mail,
+  FileText,
+  Lock,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
@@ -96,15 +103,20 @@ export function ProfileScreen() {
 
     try {
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
+      // No iOS, não salvar bankDetails para não sobrescrever dados válidos
+      // que o usuário possa ter inserido no Android (campo não exibido no iOS).
+      const updatePayload: Record<string, any> = {
         name: displayName.trim(),
         interests: selectedTopics,
-        bankDetails: {
+        emailNotifications,
+      };
+      if (FINANCIAL_FEATURES_ENABLED) {
+        updatePayload.bankDetails = {
           pix: pixKey.trim(),
           bankName: bankName.trim(),
-        },
-        emailNotifications,
-      }, { merge: true });
+        };
+      }
+      await setDoc(userRef, updatePayload, { merge: true });
 
       Alert.alert(
         'Alterações Salvas',
@@ -181,7 +193,9 @@ export function ProfileScreen() {
               </View>
             </View>
 
-            {/* ─── DADOS PARA RECEBIMENTO ────────────────────────────── */}
+            {/* ─── DADOS PARA RECEBIMENTO ───────────────────────── */}
+            {/* Oculto no iOS (Apple Guideline 1.1.4 — sem financeiro) */}
+            {FINANCIAL_FEATURES_ENABLED && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <CreditCard size={20} color={colors.primary} strokeWidth={2.5} />
@@ -210,6 +224,7 @@ export function ProfileScreen() {
               </View>
 
             </View>
+            )}
 
             {/* ─── MEUS TEMAS DE INTERESSE ───────────────────────────── */}
             <View style={styles.section}>
@@ -273,6 +288,61 @@ export function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
+          </View>
+
+          {/* ─── SUPORTE E SEGURANÇA ────────────────────────────── */}
+          <View style={[styles.mainCard, styles.safetyCard, shadows.sm]}>
+            <View style={styles.sectionHeader}>
+              <ShieldCheck size={20} color="#10B981" strokeWidth={2.5} />
+              <Text style={[styles.sectionTitle, { color: '#10B981' }]}>SUPORTE E SEGURANÇA</Text>
+            </View>
+
+            {/* Aviso de emergência */}
+            <View style={styles.emergencyBanner}>
+              <Text style={styles.emergencyTitle}>🆘 Em caso de emergência</Text>
+              <Text style={styles.emergencyText}>
+                Se você ou alguém estiver em perigo imediato, ligue para o <Text style={styles.emergencyHighlight}>SAMU 192</Text> ou vá ao pronto-socorro mais próximo.
+              </Text>
+              <Text style={styles.emergencyText}>
+                <Text style={styles.emergencyHighlight}>CVV 188</Text> — Centro de Valorização da Vida, apoio emocional 24h, gratuito.
+              </Text>
+              <TouchableOpacity
+                onPress={() => Linking.openURL('tel:188')}
+                style={styles.emergencyCallBtn}
+                accessibilityLabel="Ligar para o CVV 188"
+              >
+                <Phone size={16} color="#fff" strokeWidth={2} />
+                <Text style={styles.emergencyCallText}>Ligar para CVV 188</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Links de suporte */}
+            <TouchableOpacity
+              style={styles.supportRow}
+              onPress={() => Linking.openURL('mailto:fillipelustman@gmail.com')}
+              accessibilityLabel="Contato com suporte"
+            >
+              <Mail size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.supportRowText}>fillipelustman@gmail.com</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.supportRow}
+              onPress={() => Linking.openURL('https://meu.best/termos')}
+              accessibilityLabel="Termos de uso"
+            >
+              <FileText size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.supportRowText}>Termos de Uso</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.supportRow}
+              onPress={() => Linking.openURL('https://meu.best/privacidade')}
+              accessibilityLabel="Política de privacidade"
+            >
+              <Lock size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.supportRowText}>Política de Privacidade</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -492,5 +562,64 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.black,
     color: colors.primary,
     letterSpacing: typography.tracking.wider,
+  },
+
+  // ── Suporte e Segurança ──────────────────────────────────────────
+  safetyCard: {
+    borderColor: 'rgba(16,185,129,0.25)',
+    gap: spacing.md,
+  },
+  emergencyBanner: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.2)',
+  },
+  emergencyTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: '#DC2626',
+    letterSpacing: typography.tracking.tight,
+  },
+  emergencyText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: '#7F1D1D',
+    lineHeight: 20,
+  },
+  emergencyHighlight: {
+    fontWeight: typography.weight.black,
+    color: '#DC2626',
+  },
+  emergencyCallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#DC2626',
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  emergencyCallText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: '#fff',
+    letterSpacing: typography.tracking.tight,
+  },
+  supportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primaryLight,
+  },
+  supportRowText: {
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.medium,
+    color: colors.primary,
   },
 });

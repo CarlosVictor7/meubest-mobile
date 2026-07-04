@@ -41,6 +41,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -241,8 +242,8 @@ export function SessionDetailScreen() {
           </View>
         ) : null}
 
-        {/* ── Botão de gorjeta se speaker e sessão concluída ── */}
-        {isSpeaker && status === 'completed' && session.listenerId && (
+        {/* ── Botão de gorjeta se speaker e sessão concluída (Android apenas) ── */}
+        {FINANCIAL_FEATURES_ENABLED && isSpeaker && status === 'completed' && session.listenerId && (
           <TouchableOpacity
             style={[styles.tipButton, shadows.primary]}
             onPress={() => navigation.navigate('Session', { screen: 'TipAfterSession', params: { sessionId, fromCall: false } })}

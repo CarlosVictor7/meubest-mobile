@@ -5,6 +5,7 @@ import { ConsentScreen } from '@features/session/screens/ConsentScreen';
 import { VideoRoomScreen } from '@features/session/screens/VideoRoomScreen';
 import { PostSessionScreen } from '@features/session/screens/PostSessionScreen';
 import { TipAfterSessionScreen } from '@features/session/screens/TipAfterSessionScreen';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 const Stack = createNativeStackNavigator<SessionStackParamList>();
 
@@ -28,11 +29,14 @@ export function SessionNavigator({ route }: { route: any }) {
         component={PostSessionScreen} 
         initialParams={{ sessionId }}
       />
-      <Stack.Screen 
-        name="TipAfterSession" 
-        component={TipAfterSessionScreen} 
-        initialParams={{ sessionId }}
-      />
+      {/* TipAfterSession apenas no Android — iOS compliance Guideline 1.1.4 */}
+      {FINANCIAL_FEATURES_ENABLED && (
+        <Stack.Screen 
+          name="TipAfterSession" 
+          component={TipAfterSessionScreen} 
+          initialParams={{ sessionId }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

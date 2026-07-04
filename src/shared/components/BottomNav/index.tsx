@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { User, Calendar, CreditCard, Settings, Zap } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 export type BottomNavTab = 'home' | 'sessions' | 'wallet' | 'menu';
 
@@ -33,12 +34,17 @@ interface TabItem {
   Icon: typeof User;
 }
 
-const TABS: TabItem[] = [
+const ALL_TABS: TabItem[] = [
   { id: 'home',     label: 'Início',   Icon: User       },
   { id: 'sessions', label: 'Sessões',  Icon: Calendar   },
   { id: 'wallet',   label: 'Carteira', Icon: CreditCard },
   { id: 'menu',     label: 'Menu',     Icon: Settings   },
 ];
+
+// No iOS a aba Carteira é ocultada (iOS compliance Guideline 1.1.4).
+const TABS: TabItem[] = FINANCIAL_FEATURES_ENABLED
+  ? ALL_TABS
+  : ALL_TABS.filter((t) => t.id !== 'wallet');
 
 export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: BottomNavProps) {
   const insets = useSafeAreaInsets();
@@ -97,7 +103,7 @@ export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: Bo
 
       {/* ── Barra de navegação ── */}
       <View style={[styles.navBar, { paddingBottom: safeBottom, height: BOTTOM_NAV_BAR_HEIGHT + safeBottom }]}>
-        {/* Metade esquerda */}
+        {/* Metade esquerda: sempre exibe Início e Sessões */}
         <View style={styles.half}>
           <NavTab item={TABS[0]} active={activeTab === 'home'}     onPress={() => handleTabPress('home')} />
           <NavTab item={TABS[1]} active={activeTab === 'sessions'} onPress={() => handleTabPress('sessions')} badge={hasBadge} />
@@ -106,10 +112,16 @@ export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: Bo
         {/* Espaço central para o botão */}
         <View style={styles.centerGap} />
 
-        {/* Metade direita */}
+        {/* Metade direita: Carteira (Android) + Menu, ou apenas Menu (iOS) */}
         <View style={styles.half}>
-          <NavTab item={TABS[2]} active={activeTab === 'wallet'} onPress={() => handleTabPress('wallet')} />
-          <NavTab item={TABS[3]} active={activeTab === 'menu'}   onPress={() => handleTabPress('menu')} />
+          {FINANCIAL_FEATURES_ENABLED && (
+            <NavTab item={TABS[2]} active={activeTab === 'wallet'} onPress={() => handleTabPress('wallet')} />
+          )}
+          <NavTab
+            item={FINANCIAL_FEATURES_ENABLED ? TABS[3] : TABS[2]}
+            active={activeTab === 'menu'}
+            onPress={() => handleTabPress('menu')}
+          />
         </View>
       </View>
     </View>

@@ -33,6 +33,8 @@ export interface IncomingCallSession {
   duration?: number;
   listenerId: string | null;
   status: string;
+  /** UIDs bloqueados pelo speaker (copiado do profile no momento da criação da sessão) */
+  speakerBlockedUserIds?: string[];
 }
 
 interface UseIncomingCallResult {
@@ -124,6 +126,24 @@ export function useIncomingCall(
           return;
         }
 
+        // ── Filtro de bloqueio (ambos os sentidos) ─────────────────────
+        // 1. Se EU bloqueei o speaker → ignorar (check imediato com dados locais)
+        const myBlockedIds = profileRef.current?.blockedUserIds ?? [];
+        if (myBlockedIds.includes(session.speakerId)) {
+          console.log(`[IncomingCall] skipped (speaker blocked by me): ${session.id}`);
+          seenIds.current.add(session.id);
+          return;
+        }
+
+        // 2. Se o speaker me bloqueou → check imediato via speakerBlockedUserIds
+        //    (campo salvo na sessão pelo MatchSearchScreen)
+        const speakerBlockedInSession: string[] = session.speakerBlockedUserIds ?? [];
+        if (speakerBlockedInSession.includes(user.uid)) {
+          console.log(`[IncomingCall] skipped (I am blocked by speaker, via session field): ${session.id}`);
+          seenIds.current.add(session.id);
+          return;
+        }
+
         // Marcar como visto para evitar duplicação
         seenIds.current.add(session.id);
 
@@ -140,15 +160,35 @@ export function useIncomingCall(
           `[IncomingCall] compatible session: ${session.id} | theme: ${session.category} | match: ${hasCompatibleInterest}`
         );
 
-        // Revalidar no Firestore antes de exibir (garante que ainda está pending)
-        const showIfStillPending = () => {
-          getDoc(doc(db, 'sessions', session.id)).then((docSnap) => {
-            if (!docSnap.exists()) return;
-            const data = docSnap.data();
-            if (data.status === 'pending' && data.listenerId === null) {
-              setIncomingSession(session);
+        // Revalidar no Firestore antes de exibir:
+        // - sessão ainda pending
+        // - 2. speaker não me bloqueou (lê doc do speaker, sem mudar Rules)
+        const showIfStillPending = async () => {
+          try {
+            const [sessionSnap, speakerSnap] = await Promise.all([
+              getDoc(doc(db, 'sessions', session.id)),
+              getDoc(doc(db, 'users', session.speakerId)),
+            ]);
+
+            if (!sessionSnap.exists()) return;
+            const data = sessionSnap.data();
+            if (data.status !== 'pending' || data.listenerId !== null) return;
+
+            // 2. Verificar se o speaker me bloqueou
+            if (speakerSnap.exists()) {
+              const speakerData = speakerSnap.data();
+              const speakerBlockedIds: string[] = speakerData.blockedUserIds ?? [];
+              if (speakerBlockedIds.includes(user.uid)) {
+                console.log(`[IncomingCall] skipped (I am blocked by speaker): ${session.id}`);
+                seenIds.current.add(session.id);
+                return;
+              }
             }
-          });
+
+            setIncomingSession(session);
+          } catch (err) {
+            console.warn('[IncomingCall] Error checking block status:', err);
+          }
         };
 
         if (hasCompatibleInterest) {

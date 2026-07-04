@@ -115,7 +115,18 @@ export function ScheduleMatchScreen() {
 
   // ── Filtros aplicados no frontend ─────────────────────────────────────────
   const filteredVolunteers = useMemo(() => {
+    // Minha lista de bloqueados (check local, sem query extra)
+    const myBlockedIds = profile?.blockedUserIds ?? [];
+
     return volunteers.filter(v => {
+      // 1. Ocultar voluntários que EU bloqueei
+      if (myBlockedIds.includes(v.id)) return false;
+
+      // Nota: voluntários que ME bloquearam não podem ser filtrados aqui sem
+      // ler o doc de cada voluntário (requereria rules ou query extra).
+      // Esses casos são tratados pelo useIncomingCall (que lê o doc do speaker
+      // uma vez ao exibir o modal) e pela transaction de aceite.
+
       const nameMatch = v.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
       const bioMatch = v.bio?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
       const matchesSearch = searchQuery === '' || nameMatch || bioMatch;
@@ -129,7 +140,7 @@ export function ScheduleMatchScreen() {
 
       return matchesSearch && matchesCity && matchesGender && matchesAge && matchesTheme;
     });
-  }, [volunteers, searchQuery, cityFilter, genderFilter, ageFilter, themeFilter]);
+  }, [volunteers, searchQuery, cityFilter, genderFilter, ageFilter, themeFilter, profile?.blockedUserIds]);
 
   // Colecionar cidades únicas para popular filtros
   const uniqueCities = useMemo(() => {
@@ -182,7 +193,9 @@ export function ScheduleMatchScreen() {
         scheduledTimes: [isoDateString],
         selectedTime: isoDateString,
         type: 'scheduled',
-        schedulingMode: bookingMode
+        schedulingMode: bookingMode,
+        // Lista de bloqueados do speaker para filtro no lado do listener
+        speakerBlockedUserIds: profile?.blockedUserIds ?? [],
       };
 
       await addDoc(collection(db, 'sessions'), sessionData);

@@ -6,11 +6,14 @@
  * O mapeamento de tabs:
  *   home      → HomeTab (HomeStack)
  *   sessions  → SessionsTab (SessionsStack)
- *   wallet    → WalletTab (WalletStack)
+ *   wallet    → WalletTab (WalletStack) — Android apenas
  *   menu      → ProfileTab (ProfileStack)
  *
  * StartModal foi extraído para src/shared/components/StartModal/index.tsx
  * e é reutilizado aqui e na HomeScreen (card "Início Rápido").
+ *
+ * iOS: aba Carteira não é registrada (Guideline 1.1.4 Apple).
+ * Android: comportamento completo mantido.
  */
 import React, { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
@@ -22,6 +25,7 @@ import type { AppTabParamList } from './types';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { useIncomingCall } from '@features/session/hooks/useIncomingCall';
 import { IncomingCallModal } from '@features/session/components/IncomingCallModal';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 // Tab stacks
 import { HomeStack } from './HomeStack';
@@ -32,6 +36,8 @@ import { ProfileStack } from './ProfileStack';
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
 // ─── Mapeamento tab id → route name ────────────────────────────────
+// No iOS, 'wallet' não é registrada — o mapeamento ainda existe para
+// evitar erros de TypeScript, mas a aba nunca aparece no navigator.
 const TAB_TO_ROUTE: Record<BottomNavTab, keyof AppTabParamList> = {
   home: 'HomeTab',
   sessions: 'SessionsTab',
@@ -133,7 +139,10 @@ export function AppTabNavigator() {
       >
         <Tab.Screen name="HomeTab" component={HomeStack} />
         <Tab.Screen name="SessionsTab" component={SessionsStack} />
-        <Tab.Screen name="WalletTab" component={WalletStack} />
+        {/* WalletTab apenas no Android — iOS compliance Guideline 1.1.4 */}
+        {FINANCIAL_FEATURES_ENABLED && (
+          <Tab.Screen name="WalletTab" component={WalletStack} />
+        )}
         <Tab.Screen name="ProfileTab" component={ProfileStack} />
       </Tab.Navigator>
 

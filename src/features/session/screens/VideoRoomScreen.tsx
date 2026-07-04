@@ -18,7 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
 import { WebView } from 'react-native-webview';
-import { Gift, ShieldAlert } from 'lucide-react-native';
+import { Gift, ShieldAlert, UserX } from 'lucide-react-native';
 import {
   doc,
   onSnapshot,
@@ -27,12 +27,14 @@ import {
   getDoc,
   addDoc,
   collection,
+  arrayUnion,
 } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius } from '@constants/theme';
 import { InCallTipModal } from '@features/session/components/InCallTipModal';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 // ─── JavaScript injetado na WebView — Bridge Jitsi → React Native ──────────
 // Detecta:
@@ -633,6 +635,38 @@ export function VideoRoomScreen() {
     }
   };
 
+  // ─── Bloquear Usuário ────────────────────────────────────────────────
+  const handleBlockUserPress = () => {
+    if (!session || !user) return;
+    const otherUserId =
+      session.speakerId === user.uid ? session.listenerId : session.speakerId;
+    if (!otherUserId) return;
+
+    Alert.alert(
+      'Bloquear Usuário',
+      'Deseja bloquear este usuário? Você não receberá mais chamadas ou conexões com ele e a chamada atual será encerrada.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Bloquear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await updateDoc(doc(db, 'users', user.uid), {
+                blockedUserIds: arrayUnion(otherUserId),
+              });
+              Alert.alert('Usuário Bloqueado', 'Este usuário foi bloqueado com sucesso.');
+              completeSessionAndExit('user_hangup');
+            } catch (error) {
+              console.error('[VideoRoom] Erro ao bloquear usuário:', error);
+              Alert.alert('Erro', 'Não foi possível bloquear o usuário. Tente novamente.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (hasPermissions === null || loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -790,8 +824,8 @@ export function VideoRoomScreen() {
           style={[styles.bottomOverlay, { bottom: overlayBottom }]}
           pointerEvents="box-none"
         >
-          {/* Botão Retribuição — apenas speaker/desabafador */}
-          {isCurrentUserSpeaker && (
+          {/* Botão Retribuição — apenas speaker/desabafador no Android */}
+          {FINANCIAL_FEATURES_ENABLED && isCurrentUserSpeaker && (
             <TouchableOpacity
               style={styles.overlayBtn}
               onPress={() => setIsTipModalOpen(true)}
@@ -801,6 +835,16 @@ export function VideoRoomScreen() {
               <Gift size={22} color={colors.primary} strokeWidth={2} />
             </TouchableOpacity>
           )}
+
+          {/* Botão Bloquear — visível para todos (iOS e Android) */}
+          <TouchableOpacity
+            style={[styles.overlayBtn, styles.overlayBtnBlock]}
+            onPress={handleBlockUserPress}
+            activeOpacity={0.85}
+            accessibilityLabel="Bloquear usuário"
+          >
+            <UserX size={22} color="#8B5CF6" strokeWidth={2} />
+          </TouchableOpacity>
 
           {/* Botão Denunciar — visível para todos (speaker e listener) */}
           <TouchableOpacity
@@ -814,8 +858,8 @@ export function VideoRoomScreen() {
         </View>
       )}
 
-      {/* ── Modal de Retribuição In-Call (apenas speaker) ── */}
-      {isCurrentUserSpeaker && (
+      {/* ── Modal de Retribuição In-Call (apenas speaker, Android) ── */}
+      {FINANCIAL_FEATURES_ENABLED && isCurrentUserSpeaker && (
         <InCallTipModal
           visible={isTipModalOpen}
           onClose={() => setIsTipModalOpen(false)}
@@ -1040,6 +1084,9 @@ const styles = StyleSheet.create({
   },
   overlayBtnReport: {
     borderColor: 'rgba(239,68,68,0.4)',
+  },
+  overlayBtnBlock: {
+    borderColor: 'rgba(139,92,246,0.4)',
   },
 
   // ── Modal de Denúncia ─────────────────────────────────────────────

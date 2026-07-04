@@ -19,6 +19,7 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import Toast from 'react-native-toast-message';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 export function PostSessionScreen() {
   const navigation = useNavigation<any>();
@@ -50,9 +51,13 @@ export function PostSessionScreen() {
   const isSpeaker = profile?.role === 'speaker' || (!!session && session.speakerId === user?.uid);
   const canShowTip = isSpeaker && !!session?.listenerId && session?.listenerId !== user?.uid;
 
-  // Função centralizada: avança para gorjeta (speaker) ou Home (listener)
-  // Chamada tanto ao enviar avaliação quanto ao pular
+  // Função centralizada: avança para gorjeta (speaker/Android) ou Home (listener/iOS)
   const goToNextPostSessionStep = () => {
+    // iOS: nunca abre gorjeta — ir direto para Home (iOS compliance Guideline 1.1.4)
+    if (!FINANCIAL_FEATURES_ENABLED) {
+      navigation.reset({ index: 0, routes: [{ name: 'App' }] });
+      return;
+    }
     if (canShowTip) {
       navigation.navigate('TipAfterSession', { sessionId });
     } else {

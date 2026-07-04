@@ -59,4 +59,9 @@ export interface UserProfile {
    * Armazenado separadamente para não sobrescrever o campo `email` principal.
    */
   applePrivateEmail?: string;
+  /**
+   * Lista de UIDs bloqueados por este usuário.
+   * Atualizada com arrayUnion no VideoRoomScreen ao bloquear durante chamada.
+   */
+  blockedUserIds?: string[];
 }
