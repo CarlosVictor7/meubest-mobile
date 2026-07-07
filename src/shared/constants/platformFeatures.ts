@@ -14,3 +14,10 @@ import { Platform } from 'react-native';
  * false → iOS (carteira, Pix, gorjeta, saque, retribuição desabilitados)
  */
 export const FINANCIAL_FEATURES_ENABLED = Platform.OS !== 'ios';
+
+/**
+ * true  → Android / Web (recursos de moedas, recompensas, indicação ativos)
+ * false → iOS (moedas, recompensas, indicação ocultados por exigência da App Store)
+ */
+export const COINS_FEATURES_ENABLED = Platform.OS !== 'ios';
+

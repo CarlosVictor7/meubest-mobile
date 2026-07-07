@@ -52,7 +52,7 @@ import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_
 import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary } from '@shared/services/paymentService';
-import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -498,27 +498,29 @@ export function HomeScreen() {
           {/* ═══════════════════════════════════════════════════════
               7. BLACK CARD — Indique um Amigo
           ═══════════════════════════════════════════════════════ */}
-          <BlackCard
-            icon={<Gift size={34} color={colors.textInverted} strokeWidth={1.8} />}
-            label="Recompensas"
-            title="Indique um Amigo"
-            subtitle="Espalhe o bem! Ganhe 50 Moedas de Gratidão por indicação!"
-          >
-            {/* Código + botão */}
-            <View style={styles.referralBox}>
-              <View style={styles.referralCode}>
-                <Text style={styles.referralLabel}>SEU CÓDIGO</Text>
-                <Text style={styles.referralValue}>{referralCode}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.inviteBtn}
-              onPress={handleShare}
-              activeOpacity={0.85}
+          {COINS_FEATURES_ENABLED && (
+            <BlackCard
+              icon={<Gift size={34} color={colors.textInverted} strokeWidth={1.8} />}
+              label="Recompensas"
+              title="Indique um Amigo"
+              subtitle="Espalhe o bem! Ganhe 50 Moedas de Gratidão por indicação!"
             >
-              <Text style={styles.inviteBtnText}>CONVIDAR AGORA →</Text>
-            </TouchableOpacity>
-          </BlackCard>
+              {/* Código + botão */}
+              <View style={styles.referralBox}>
+                <View style={styles.referralCode}>
+                  <Text style={styles.referralLabel}>SEU CÓDIGO</Text>
+                  <Text style={styles.referralValue}>{referralCode}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.inviteBtn}
+                onPress={handleShare}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.inviteBtnText}>CONVIDAR AGORA →</Text>
+              </TouchableOpacity>
+            </BlackCard>
+          )}
 
           {/* ═══════════════════════════════════════════════════════
               8. DICAS DE SEGURANÇA

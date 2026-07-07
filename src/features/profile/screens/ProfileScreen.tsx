@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import {
   User,
@@ -22,6 +23,7 @@ import {
   Mail,
   FileText,
   Lock,
+  Trash2,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@features/auth/hooks/useAuth';
@@ -47,7 +49,8 @@ const TOPICS = [
 ];
 
 export function ProfileScreen() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, deleteAccount } = useAuth();
+
 
   // Estados locais para edição
   const [displayName, setDisplayName] = useState('');
@@ -55,6 +58,8 @@ export function ProfileScreen() {
   const [bankName, setBankName] = useState('');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [emailNotifications, setEmailNotifications] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+
 
   // Inicializa dados do usuário a partir do Firestore
   useEffect(() => {
@@ -150,6 +155,66 @@ export function ProfileScreen() {
       ]
     );
   };
+
+  const handleDeleteAccount = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Alert.alert(
+      'Excluir Conta Permanente ⚠️',
+      'Esta ação é irreversível. Todos os seus dados de perfil, histórico e conexões serão excluídos permanentemente de forma imediata.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Continuar',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Confirmação Final',
+              'Você tem certeza absoluta de que deseja excluir sua conta permanentemente? Seus dados não poderão ser recuperados.',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Excluir Permanentemente',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsDeleting(true);
+                    try {
+                      await deleteAccount();
+                    } catch (error: any) {
+                      console.error('[ProfileScreen] Erro ao excluir conta:', error);
+                      if (error?.code === 'auth/requires-recent-login') {
+                        Alert.alert(
+                          'Ação Requerida',
+                          'Por segurança, a exclusão de conta exige um login recente. Por favor, saia e entre novamente no aplicativo para concluir a exclusão da sua conta.',
+                          [
+                            {
+                              text: 'Sair e Reautenticar',
+                              onPress: async () => {
+                                try {
+                                  await logout();
+                                } catch (e) {
+                                  console.error('Logout error during delete redirect:', e);
+                                }
+                              }
+                            },
+                            { text: 'Cancelar', style: 'cancel' }
+                          ]
+                        );
+                      } else {
+                        Alert.alert('Erro', 'Não foi possível excluir sua conta. Tente novamente mais tarde.');
+                      }
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }
+                }
+              ]
+            );
+          }
+        }
+      ]
+    );
+  };
+
 
   return (
     <View style={styles.root}>
@@ -278,15 +343,25 @@ export function ProfileScreen() {
 
             {/* ─── BOTÕES DE AÇÃO ────────────────────────────────────── */}
             <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.btnSave} onPress={handleSave} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.btnSave} onPress={handleSave} activeOpacity={0.85} disabled={isDeleting}>
                 <Text style={styles.btnSaveText}>SALVAR ALTERAÇÕES</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.btnLogout} onPress={handleLogout} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.btnLogout} onPress={handleLogout} activeOpacity={0.85} disabled={isDeleting}>
                 <LogOut size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
                 <Text style={styles.btnLogoutText}>SAIR DA CONTA</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity style={styles.btnDelete} onPress={handleDeleteAccount} activeOpacity={0.85} disabled={isDeleting}>
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#EF4444" style={{ marginRight: spacing.sm }} />
+                ) : (
+                  <Trash2 size={18} color="#EF4444" style={{ marginRight: spacing.sm }} />
+                )}
+                <Text style={styles.btnDeleteText}>EXCLUIR MINHA CONTA</Text>
+              </TouchableOpacity>
             </View>
+
 
           </View>
 
@@ -563,6 +638,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: typography.tracking.wider,
   },
+  btnDelete: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnDeleteText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: '#EF4444',
+    letterSpacing: typography.tracking.wider,
+  },
+
 
   // ── Suporte e Segurança ──────────────────────────────────────────
   safetyCard: {

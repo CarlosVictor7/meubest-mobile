@@ -27,6 +27,8 @@ import { Avatar, NoticeCard, SegmentedControl } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
 import { EvolutionModal } from '@features/gamification/components/EvolutionModal';
+import { COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+
 
 // Chave de persistência da preferência Online do modo Apoiar
 const LISTENER_ONLINE_PREF_KEY = '@meubest:listenerOnlinePreference';
@@ -237,7 +239,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
               activeOpacity={0.7}
             >
               <Text style={styles.miniStat}>🔥 {streak}</Text>
-              <Text style={styles.miniStat}>🪙 {coins}</Text>
+              {COINS_FEATURES_ENABLED && <Text style={styles.miniStat}>🪙 {coins}</Text>}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.bellBtn}

@@ -23,6 +23,8 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { Avatar } from '@shared/components';
 import { UserProfile } from '@models/user';
 import * as Haptics from 'expo-haptics';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+
 
 interface EvolutionModalProps {
   visible: boolean;
@@ -214,8 +216,12 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
                       <Text style={styles.tipText}>Participe de novas sessões de acolhimento sempre que precisar.</Text>
                     </View>
                     <View style={styles.tipItem}>
-                      <Text style={styles.tipEmoji}>🪙</Text>
-                      <Text style={styles.tipText}>Reconheça seus apoiadores enviando retribuições e avaliações.</Text>
+                      <Text style={styles.tipEmoji}>{FINANCIAL_FEATURES_ENABLED ? '🪙' : '⭐'}</Text>
+                      <Text style={styles.tipText}>
+                        {FINANCIAL_FEATURES_ENABLED
+                          ? 'Reconheça seus apoiadores enviando retribuições e avaliações.'
+                          : 'Avalie a experiência de acolhimento ao final de cada conversa.'}
+                      </Text>
                     </View>
                     <View style={styles.tipItem}>
                       <Text style={styles.tipEmoji}>🚀</Text>

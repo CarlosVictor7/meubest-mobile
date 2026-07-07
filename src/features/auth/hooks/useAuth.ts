@@ -1,7 +1,7 @@
 import { useAuthStore } from '@shared/stores/authStore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@shared/services/firebase';
-import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import { doc, updateDoc, deleteField, deleteDoc } from 'firebase/firestore';
 
 /** Hook conveniente para acessar auth state — padrão igual à web */
 export function useAuth() {
@@ -32,5 +32,38 @@ export function useAuth() {
     }
   };
 
-  return { user, profile, loading, isAdmin, isAuthenticated, logout };
+  const deleteAccount = async () => {
+    try {
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const lastSignIn = auth.currentUser?.metadata.lastSignInTime;
+      const diffMs = lastSignIn ? (Date.now() - new Date(lastSignIn).getTime()) : Infinity;
+      
+      // Se o login foi há mais de 5 minutos, a exclusão da conta do Firebase Auth quase certamente falhará com requires-recent-login.
+      // Paramos antes de apagar o Firestore para não deixar a conta sem perfil mas ainda ativa.
+      if (diffMs > 5 * 60 * 1000) {
+        const err = new Error('Reautenticação necessária');
+        (err as any).code = 'auth/requires-recent-login';
+        throw err;
+      }
+
+      // 1. Excluir o documento principal do usuário no Firestore (apaga perfil, disponibilidade, status)
+      const userRef = doc(db, 'users', user.uid);
+      await deleteDoc(userRef);
+
+      // 2. Excluir a credencial do usuário no Firebase Auth
+      if (auth.currentUser) {
+        await auth.currentUser.delete();
+      }
+
+      // 3. Limpar a sessão local do Zustand
+      useAuthStore.getState().clear();
+    } catch (error) {
+      console.error('[useAuth] deleteAccount error:', error);
+      throw error;
+    }
+  };
+
+  return { user, profile, loading, isAdmin, isAuthenticated, logout, deleteAccount };
 }
+
