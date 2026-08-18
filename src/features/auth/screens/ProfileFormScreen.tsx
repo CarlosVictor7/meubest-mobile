@@ -35,6 +35,11 @@ import { Button } from '@shared/components';
 import { SelectSheet } from '@shared/components/SelectSheet';
 import { BR_STATES, CITIES_BY_UF } from '@constants/brazilLocations';
 import { RELIGION_OPTIONS, RELIGION_OTHER } from '@constants/religions';
+import {
+  suggestPreferredName,
+  BIO_MAX_LENGTH,
+  PREFERRED_NAME_MAX_LENGTH,
+} from '@shared/utils/displayName';
 
 const { width } = Dimensions.get('window');
 
@@ -64,13 +69,17 @@ const INTERESTS = [
 ];
 
 export function ProfileFormScreen() {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
     role: '' as 'speaker' | 'listener' | '',
+    // Sugestão inicial vinda do provider (Google/Apple). O usuário pode trocar.
+    // `profile` pode não ter chegado ainda no primeiro render — o efeito abaixo cobre isso.
+    preferredName: suggestPreferredName(profile) || suggestPreferredName({ name: user?.displayName }),
+    bio: '',
     gender: '',
     ageRange: '',
     state: '',
@@ -80,6 +89,26 @@ export function ProfileFormScreen() {
     isAdult: false,
     interests: [] as string[],
   });
+
+  /**
+   * Preenche a sugestão de nome quando o perfil chega depois do primeiro render.
+   * Só age enquanto o campo estiver vazio — nunca sobrescreve o que o usuário digitou.
+   */
+  const nameSuggestionApplied = useRef(false);
+  React.useEffect(() => {
+    if (nameSuggestionApplied.current) return;
+    const suggestion =
+      suggestPreferredName(profile) || suggestPreferredName({ name: user?.displayName });
+    if (!suggestion) return;
+    setFormData((prev) => {
+      if (prev.preferredName.trim()) {
+        nameSuggestionApplied.current = true;
+        return prev;
+      }
+      nameSuggestionApplied.current = true;
+      return { ...prev, preferredName: suggestion };
+    });
+  }, [profile?.name, profile?.preferredName, user?.displayName]);
 
   // Animated scale for step transitions
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -152,10 +181,17 @@ export function ProfileFormScreen() {
           ? formData.religionOther.trim() || null
           : formData.religionChoice || null;
 
+      const bio = formData.bio.trim();
+
       await setDoc(
         userRef,
         {
           role: formData.role,
+          // `preferredName` é o nome público escolhido pelo usuário.
+          // `name` NÃO entra no payload — ele pertence ao provider (Google/Apple)
+          // e nenhuma tela de perfil pode sobrescrevê-lo.
+          preferredName: formData.preferredName.trim(),
+          bio: bio || null,
           gender: formData.gender,
           ageRange: formData.ageRange,
           state: formData.state || null,
@@ -178,7 +214,12 @@ export function ProfileFormScreen() {
 
   // Validations
   const isStep1Valid = formData.role !== '';
+  // `preferredName` é obrigatório APENAS aqui, na validação de etapa do cadastro novo.
+  // Não é obrigatório no tipo nem em `isProfileComplete` — usuário antigo nunca
+  // volta ao onboarding por causa dele. Ver ADR-003.
   const isStep2Valid =
+    formData.preferredName.trim().length > 0 &&
+    formData.bio.length <= BIO_MAX_LENGTH &&
     formData.gender !== '' &&
     formData.ageRange !== '' &&
     formData.state !== '' &&
@@ -351,6 +392,48 @@ export function ProfileFormScreen() {
                 </View>
 
                 <View style={styles.formCard}>
+                  {/* Nome preferido — obrigatório no cadastro novo */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>COMO VOCÊ QUER SER CHAMADO?</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Ex.: Ana"
+                      placeholderTextColor={colors.textMutedValue}
+                      value={formData.preferredName}
+                      onChangeText={(preferredName) =>
+                        setFormData((prev) => ({ ...prev, preferredName }))
+                      }
+                      maxLength={PREFERRED_NAME_MAX_LENGTH}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      returnKeyType="next"
+                      accessibilityLabel="Como você quer ser chamado"
+                    />
+                    <Text style={styles.fieldHint}>
+                      É assim que as outras pessoas vão te ver no app.
+                    </Text>
+                  </View>
+
+                  {/* Sobre você — opcional */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>SOBRE VOCÊ (OPCIONAL)</Text>
+                    <TextInput
+                      style={styles.textArea}
+                      placeholder="Conte um pouco sobre você, seus interesses ou o que gostaria que outras pessoas soubessem."
+                      placeholderTextColor={colors.textMutedValue}
+                      value={formData.bio}
+                      onChangeText={(bio) => setFormData((prev) => ({ ...prev, bio }))}
+                      maxLength={BIO_MAX_LENGTH}
+                      multiline
+                      textAlignVertical="top"
+                      autoCapitalize="sentences"
+                      accessibilityLabel="Sobre você"
+                    />
+                    <Text style={styles.charCounter}>
+                      {formData.bio.length}/{BIO_MAX_LENGTH}
+                    </Text>
+                  </View>
+
                   {/* Gênero */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>GÊNERO</Text>
@@ -641,7 +724,11 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    // Folga generosa: com o teclado aberto o Android reduz a janela
+    // (`windowSoftInputMode="adjustResize"`) e o iOS usa o KeyboardAvoidingView.
+    // Em ambos os casos é este padding que permite rolar o último campo
+    // para acima do teclado. A etapa 2 cresceu com nome preferido e bio.
+    paddingBottom: spacing.xxl + spacing.lg,
   },
   stepContainer: {
     gap: spacing.lg,
@@ -769,6 +856,33 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.text,
     fontWeight: typography.weight.medium,
+  },
+  textArea: {
+    minHeight: 96,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm + 2,
+    paddingBottom: spacing.sm + 2,
+    fontSize: typography.size.sm,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+    lineHeight: 20,
+  },
+  fieldHint: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    marginLeft: 4,
+  },
+  charCounter: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    textAlign: 'right',
+    marginRight: 4,
   },
   checkboxRow: {
     flexDirection: 'row',
