@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useAuthStore } from '@shared/stores/authStore';
+import { useBootstrap } from '@shared/hooks/useBootstrap';
 import { AuthNavigator } from './AuthNavigator';
 import { AppTabNavigator } from './AppTabNavigator';
 import { SessionNavigator } from './SessionNavigator';
@@ -99,34 +100,60 @@ const errorStyles = StyleSheet.create({
   },
 });
 
+/**
+ * Tela de espera do bootstrap.
+ *
+ * Fica DENTRO do NavigationContainer de propósito. Antes ela era um early
+ * return acima dele, o que desmontava e remontava toda a árvore de navegação
+ * a cada alternância de `loading` — além do flash, isso perdia o estado de
+ * navegação.
+ */
+function BootstrapScreen() {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>
+  );
+}
+
 export function RootNavigator() {
-  const loading = useAuthStore((s) => s.loading);
+  const { isReady, isFirstLaunch } = useBootstrap();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
   const profile = useAuthStore((s) => s.profile);
   const profileError = useAuthStore((s) => s.profileError);
 
-  // Enquanto carrega (ou autenticado mas sem resposta do Firestore ainda)
-  if (loading || (isAuthenticated && !profile && !profileError)) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  // Autenticado mas o Firestore ainda não respondeu: continuamos no splash em
+  // vez de decidir entre App e ProfileForm com informação incompleta.
+  const waitingProfile = isAuthenticated && !profile && !profileError;
+  const showBootstrap = !isReady || waitingProfile;
 
   return (
     <NavigationContainer>
       <Root.Navigator screenOptions={{ headerShown: false }}>
-        {!isAuthenticated ? (
-          // Não autenticado → fluxo de login/onboarding
-          <Root.Screen name="Auth" component={AuthNavigator} />
+        {showBootstrap ? (
+          // Ainda decidindo — nenhum navigator de conteúdo é montado.
+          <Root.Screen name="Bootstrap" component={BootstrapScreen} />
+        ) : !isAuthenticated ? (
+          // Não autenticado → fluxo de login/onboarding.
+          // `isFirstLaunch` já foi resolvido pelo bootstrap: o AuthNavigator
+          // não faz mais leitura própria do AsyncStorage (nada de 2º spinner).
+          <Root.Screen name="Auth">
+            {() => <AuthNavigator isFirstLaunch={isFirstLaunch} />}
+          </Root.Screen>
         ) : profileError ? (
-          // Autenticado, mas Firestore retornou erro transitório
-          // NÃO vai para ProfileForm — mostra tela de erro
+          // Autenticado, mas Firestore retornou erro transitório.
+          // NÃO vai para ProfileForm — mostra tela de erro.
           <Root.Screen name="ProfileError" component={ProfileErrorScreen} />
         ) : (!profile || profile.isProfileComplete !== true) ? (
           // Autenticado, leitura do Firestore bem-sucedida, doc.exists()===false
-          // OU perfil incompleto: vai para cadastro/conclusão de perfil
+          // OU perfil incompleto: vai para cadastro/conclusão de perfil.
           <Root.Screen name="ProfileForm" component={ProfileFormScreen} />
         ) : (
           // Autenticado + perfil completo → app principal
