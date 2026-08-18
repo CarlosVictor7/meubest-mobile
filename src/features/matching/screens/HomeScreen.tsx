@@ -13,7 +13,7 @@
  * 8. BlackCard — Indique um Amigo
  * 9. Dicas de Segurança
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -41,7 +41,7 @@ import {
   Video,
   ChevronRight,
 } from 'lucide-react-native';
-import { doc, updateDoc, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '@navigation/types';
@@ -54,6 +54,9 @@ import { getWalletSummary } from '@shared/services/paymentService';
 import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getFirstName, getInitial } from '@shared/utils/displayName';
 import { isInListenerMode } from '@shared/utils/listener';
+import { useUserSessions } from '@features/session/hooks/useUserSessions';
+import { filterHistory, filterUpcoming } from '@features/session/utils/sessionFilters';
+import { canJoinSession, isUpcomingSession } from '@features/session/utils/sessionWindow';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -88,7 +91,6 @@ export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { user, profile } = useAuth();
   const [isOnline, setIsOnline] = useState(profile?.isOnline ?? false);
-  const [sessions, setSessions] = useState<any[]>([]);
   // Estado do modal de seleção de tema (card "Início Rápido")
   const [startModalVisible, setStartModalVisible] = useState(false);
 
@@ -97,6 +99,11 @@ export function HomeScreen() {
   const [editableInterests, setEditableInterests] = useState<string[]>([]);
   const [isSavingThemes, setIsSavingThemes] = useState(false);
 
+
+  // Sessões dos DOIS papéis. A consulta antiga escolhia o campo pelo papel
+  // atual, então alternar entre Desabafar e Acolher fazia metade do histórico
+  // sumir da Home. Ver useUserSessions.
+  const { sessions } = useUserSessions(user?.uid);
 
   const isListener = isInListenerMode(profile);
   const name = getFirstName(profile, 'amigo(a)');
@@ -135,21 +142,6 @@ export function HomeScreen() {
       focusUnsub();
     };
   }, [navigation]);
-
-  // Escuta sessões do usuário
-  useEffect(() => {
-    if (!user || !profile) return;
-    const q = query(
-      collection(db, 'sessions'),
-      where(profile.role === 'speaker' ? 'speakerId' : 'listenerId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(5)
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, [user, profile?.role]);
 
   // ── Disponibilidade ───────────────────────────────────────────────
   // O card MINHA DISPONIBILIDADE tinha `onAction={() => {}}` — botão morto.
@@ -231,13 +223,16 @@ export function HomeScreen() {
   }, [referralCode]);
 
   // ── Sessões próximas e recentes ─────────────────────────────────
-  const upcoming = sessions.filter(
-    (s) => s.status === 'active' || s.status === 'pending'
+  const upcoming = useMemo(
+    () => filterUpcoming(sessions, (s) => isUpcomingSession(s)),
+    [sessions]
   );
-  const recent = sessions.filter((s) => s.status === 'completed');
+  const recent = useMemo(() => filterHistory(sessions), [sessions]);
 
+  // A sala só abre dentro da janela — uma sessão agendada para daqui a três
+  // dias não pode ser aberta hoje. Ver canJoinSession.
   const handleSessionPress = useCallback((s: any) => {
-    if (s.status === 'active' || s.status === 'pending') {
+    if (canJoinSession(s).canJoin) {
       (navigation as any).navigate('Session', { sessionId: s.id });
     }
   }, [navigation]);

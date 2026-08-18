@@ -1,13 +1,21 @@
 /**
- * SessionsListScreen — Histórico de Sessões
+ * SessionsListScreen — Próximas sessões e histórico
  *
- * Fiel ao PWA:
- * - TabHeader padrão
- * - Card "HISTÓRICO DE SESSÕES" com título grande em vermelho (2 linhas)
- * - Empty state: círculo rosa + "VOCÊ AINDA NÃO REALIZOU SESSÕES."
- * - Dados reais do Firestore (listener em tempo real)
+ * Três correções desta tela, todas de causa raiz:
+ *
+ * 1. Sem TabHeader. Esta aba não precisa do cabeçalho de papel/chave — ele
+ *    empurrava o conteúdo para baixo sem servir para nada aqui. Home, Menu e
+ *    Carteira continuam com ele.
+ *
+ * 2. O histórico mostra SOMENTE sessões concluídas. Antes listava tudo, e para
+ *    cancelled/rejected o card renderizava "CANCELADA" no rodapé E no badge —
+ *    o "CANCELADA CANCELADA". Filtrar na origem elimina o caminho.
+ *
+ * 3. As sessões vêm de useUserSessions, que consulta os DOIS papéis. Antes a
+ *    consulta escolhia o campo pelo papel atual e metade do histórico sumia
+ *    quando a pessoa alternava entre Desabafar e Acolher.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,21 +24,16 @@ import {
   StatusBar,
   TouchableOpacity,
 } from 'react-native';
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  onSnapshot,
-} from 'firebase/firestore';
-import { Calendar, Clock, Video } from 'lucide-react-native';
-import { db } from '@shared/services/firebase';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Calendar, Clock, Video, CalendarClock } from 'lucide-react-native';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { useNavigation } from '@react-navigation/native';
-import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
+import { NoticeStrip } from '@shared/components/NoticeStrip';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { useUserSessions } from '@features/session/hooks/useUserSessions';
+import { filterHistory, filterUpcoming, getCounterpart } from '@features/session/utils/sessionFilters';
+import { canJoinSession, describeJoinReason, isUpcomingSession } from '@features/session/utils/sessionWindow';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -52,76 +55,193 @@ const STATUS_COLOR: Record<string, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function SessionsListScreen() {
-  const { user, profile } = useAuth();
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const { user } = useAuth();
+  const navigation = useNavigation<any>();
 
-  useEffect(() => {
-    if (!user || !profile) {
-      setLoading(false);
-      return;
-    }
+  // Consulta os DOIS papéis — ver useUserSessions.
+  const { sessions, loading } = useUserSessions(user?.uid);
 
-    const field = profile.role === 'speaker' ? 'speakerId' : 'listenerId';
-    const q = query(
-      collection(db, 'sessions'),
-      where(field, '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-
-    return () => unsub();
-  }, [user, profile?.role]);
+  const upcoming = useMemo(
+    () => filterUpcoming(sessions, (s) => isUpcomingSession(s)),
+    [sessions]
+  );
+  const history = useMemo(() => filterHistory(sessions), [sessions]);
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+
+      {/* Sem TabHeader nesta aba — só a faixa de segurança, que continua acessível. */}
+      <SafeAreaView edges={['top']} style={styles.safeTop}>
+        <View style={styles.topBar}>
+          <Text style={styles.topTitle}>SESSÕES</Text>
+        </View>
+        <View style={styles.noticeWrap}>
+          <NoticeStrip />
+        </View>
+      </SafeAreaView>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
         bounces
       >
-        {/* Cabeçalho padrão */}
-        <TabHeader />
-
-        {/* ── Card Histórico ──────────────────────────────────── */}
         <View style={styles.padded}>
+          {/* ── Próximas sessões ─────────────────────────────── */}
+          {upcoming.length > 0 && (
+            <View style={[styles.upcomingCard, shadows.sm]}>
+              <View style={styles.upcomingHeader}>
+                <View style={styles.upcomingIconWrap}>
+                  <CalendarClock size={18} color={colors.primary} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.upcomingTitle}>PRÓXIMAS SESSÕES</Text>
+              </View>
+
+              <View style={styles.list}>
+                {upcoming.map((session) => (
+                  <UpcomingCard key={session.id} session={session} uid={user?.uid} />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* ── Histórico ────────────────────────────────────── */}
           <View style={[styles.historyCard, shadows.sm]}>
-            {/* Título grande — igual ao PWA */}
-            <Text style={styles.historyTitle}>
-              {'HISTÓRICO DE\nSESSÕES'}
-            </Text>
+            <Text style={styles.historyTitle}>{'HISTÓRICO DE\nSESSÕES'}</Text>
 
             {loading ? (
               <Text style={styles.loadingText}>Carregando...</Text>
-            ) : sessions.length === 0 ? (
+            ) : history.length === 0 ? (
               <EmptyState />
             ) : (
               <View style={styles.list}>
-                {sessions.map((session) => (
-                  <SessionCard key={session.id} session={session} />
+                {history.map((session) => (
+                  <SessionCard key={session.id} session={session} uid={user?.uid} />
                 ))}
               </View>
             )}
           </View>
         </View>
 
-        {/* Espaço para BottomNav */}
         <View style={{ height: BOTTOM_NAV_SCROLL_PAD + 16 }} />
       </ScrollView>
     </View>
   );
 }
+
+/**
+ * Card de uma sessão agendada que ainda vai acontecer.
+ * O botão só vira "ENTRAR NA SALA" dentro da janela — ver `canJoinSession`.
+ */
+function UpcomingCard({ session, uid }: { session: any; uid?: string | null }) {
+  const navigation = useNavigation<any>();
+  const decision = canJoinSession(session);
+  const counterpart = getCounterpart(session, uid);
+
+  const when = session.selectedTime
+    ? new Date(session.selectedTime).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—';
+
+  return (
+    <View style={up.container}>
+      <View style={up.top}>
+        <View style={up.iconWrap}>
+          <Video size={18} color={colors.primary} strokeWidth={2} />
+        </View>
+        <View style={up.info}>
+          <Text style={up.category}>{(session.category ?? '—').toUpperCase()}</Text>
+          <View style={up.metaRow}>
+            <Clock size={11} color={colors.textMutedValue} strokeWidth={2} />
+            <Text style={up.meta}>{when}</Text>
+            {session.duration ? (
+              <>
+                <Text style={up.metaDot}>•</Text>
+                <Text style={up.meta}>{session.duration} min</Text>
+              </>
+            ) : null}
+          </View>
+          {counterpart && (
+            <Text style={up.counterpart} numberOfLines={1}>
+              com {counterpart.name}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[up.joinBtn, !decision.canJoin && up.joinBtnDisabled]}
+        disabled={!decision.canJoin}
+        onPress={() => navigation.navigate('Session', { sessionId: session.id })}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !decision.canJoin }}
+      >
+        <Text style={[up.joinText, !decision.canJoin && up.joinTextDisabled]}>
+          {describeJoinReason(decision)}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const up = StyleSheet.create({
+  container: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.primaryLight,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  top: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  iconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: borderRadius.md,
+    backgroundColor: `${colors.primary}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  info: { flex: 1, gap: 2 },
+  category: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.text,
+    letterSpacing: 0.3,
+  },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  meta: { fontSize: 11, color: colors.textMutedValue, fontWeight: typography.weight.medium },
+  metaDot: { fontSize: 11, color: colors.textMutedValue },
+  counterpart: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
+  },
+  joinBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm + 2,
+    alignItems: 'center',
+  },
+  joinBtnDisabled: {
+    backgroundColor: 'rgba(26,26,26,0.06)',
+  },
+  joinText: {
+    color: '#FFF',
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.8,
+  },
+  joinTextDisabled: {
+    color: colors.textMutedValue,
+  },
+});
+
 
 // ─── EmptyState ──────────────────────────────────────────────────────────────
 function EmptyState() {
@@ -144,12 +264,13 @@ function EmptyState() {
   );
 }
 
-// ─── SessionCard ─────────────────────────────────────────────────────────────
-function SessionCard({ session }: { session: any }) {
+// ─── SessionCard — apenas sessões CONCLUÍDAS chegam aqui ─────────────────────
+function SessionCard({ session, uid }: { session: any; uid?: string | null }) {
   const navigation = useNavigation<any>();
-  const status      = session.status ?? 'pending';
+  const status      = session.status ?? 'completed';
   const statusLabel = STATUS_LABEL[status] ?? status.toUpperCase();
   const statusColor = STATUS_COLOR[status] ?? '#9CA3AF';
+  const counterpart = getCounterpart(session, uid);
 
   const duration = session.duration
     ? `${session.duration} min`
@@ -170,20 +291,14 @@ function SessionCard({ session }: { session: any }) {
 
   const category = (session.category ?? session.theme ?? '—').toUpperCase();
 
-  const handlePress = () => {
-    if (status === 'active' || status === 'pending') {
-      navigation.navigate('Session', { sessionId: session.id });
-    } else if (status === 'completed') {
-      navigation.navigate('SessionDetail', { sessionId: session.id });
-    }
-  };
+  // A lista já é filtrada para `completed`, então o destino é sempre o detalhe.
+  const handlePress = () => navigation.navigate('SessionDetail', { sessionId: session.id });
 
   return (
     <TouchableOpacity 
       style={card.container} 
       onPress={handlePress}
       activeOpacity={0.7}
-      disabled={status !== 'active' && status !== 'pending' && status !== 'completed'}
     >
       <View style={card.top}>
         <View style={card.iconWrap}>
@@ -201,22 +316,22 @@ function SessionCard({ session }: { session: any }) {
             )}
             <Text style={card.meta}>{dateStr}</Text>
           </View>
+          {counterpart && (
+            <Text style={card.counterpart} numberOfLines={1}>
+              com {counterpart.name}
+            </Text>
+          )}
         </View>
       </View>
 
+      {/* O rodapé tinha um ramo que escrevia "CANCELADA" ao lado do badge, que
+          também dizia "CANCELADA". Como a lista agora só recebe sessões
+          concluídas, o ramo foi removido em vez de ficar armado. */}
       <View style={card.footer}>
         <View style={{ flex: 1 }}>
-          {(status === 'active' || status === 'pending') ? (
-            <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
-              <Text style={[card.detalhes, { color: colors.primary, fontWeight: '900' }]}>ENTRAR NA SALA</Text>
-            </TouchableOpacity>
-          ) : status === 'completed' ? (
-            <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
-              <Text style={[card.detalhes, { color: colors.primary }]}>VER DETALHES</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={[card.detalhes, { color: colors.textMutedValue, textDecorationLine: 'none' }]}>CANCELADA</Text>
-          )}
+          <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
+            <Text style={[card.detalhes, { color: colors.primary }]}>VER DETALHES</Text>
+          </TouchableOpacity>
         </View>
         <View style={[card.badge, { backgroundColor: `${statusColor}18` }]}>
           <Text style={[card.badgeText, { color: statusColor }]}>
@@ -232,7 +347,56 @@ function SessionCard({ session }: { session: any }) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flexGrow: 1 },
-  padded: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+  padded: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.lg },
+
+  // Barra própria da aba, no lugar do TabHeader
+  safeTop: { backgroundColor: colors.background },
+  topBar: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  topTitle: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  noticeWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+
+  // Card de próximas sessões
+  upcomingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 3,
+    borderColor: colors.primaryLight,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  upcomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  upcomingIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upcomingTitle: {
+    flex: 1,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.8,
+  },
 
   historyCard: {
     backgroundColor: colors.surface,
@@ -357,6 +521,12 @@ const card = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: borderRadius.full,
+  },
+  counterpart: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
+    marginTop: 2,
   },
   badgeText: {
     fontSize: typography.size.xs - 1,

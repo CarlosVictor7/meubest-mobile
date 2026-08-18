@@ -14,7 +14,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { 
   ArrowLeft, 
   Calendar as CalendarIcon, 
@@ -54,18 +54,39 @@ const DURATIONS = [
 
 export function ScheduleMatchScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { user, profile } = useAuth();
 
+  /**
+   * Reagendamento vindo do detalhe de uma sessão concluída.
+   * Carrega os papeis ORIGINAIS: quem desabafou continua desabafando, quem
+   * acolheu continua acolhendo — não importa quem apertou o botão.
+   */
+  const rebook = route.params?.rebook as
+    | {
+        sessionId: string;
+        speakerId: string;
+        listenerId: string;
+        listenerName?: string;
+        category?: string;
+        duration?: number;
+      }
+    | undefined;
+
   // Etapa do fluxo: 0 = Escolha Tipo (Aleatório/Específico), 1 = Escolha Voluntário, 2 = Configurar Agendamento
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(rebook ? 2 : 0);
   
   // Modo de agendamento: 'random' ou 'specific'
-  const [bookingMode, setBookingMode] = useState<'random' | 'specific'>('random');
+  const [bookingMode, setBookingMode] = useState<'random' | 'specific'>(
+    rebook ? 'specific' : 'random'
+  );
 
   // Estados dos voluntários
   const [volunteers, setVolunteers] = useState<any[]>([]);
   const [loadingVolunteers, setLoadingVolunteers] = useState(false);
-  const [selectedVolunteer, setSelectedVolunteer] = useState<any | null>(null);
+  const [selectedVolunteer, setSelectedVolunteer] = useState<any | null>(
+    rebook ? { id: rebook.listenerId, name: rebook.listenerName } : null
+  );
 
   // Filtros de busca (Apenas para o modo específico)
   const [searchQuery, setSearchQuery] = useState('');
@@ -76,8 +97,10 @@ export function ScheduleMatchScreen() {
   const [showFilters, setShowFilters] = useState(false);
 
   // Dados do Agendamento
-  const [selectedTheme, setSelectedTheme] = useState<string>(SESSION_THEMES[0]?.label || 'Relacionamento');
-  const [selectedDuration, setSelectedDuration] = useState<number>(30);
+  const [selectedTheme, setSelectedTheme] = useState<string>(
+    rebook?.category || SESSION_THEMES[0]?.label || 'Relacionamento'
+  );
+  const [selectedDuration, setSelectedDuration] = useState<number>(rebook?.duration ?? 30);
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(null);
   const [selectedTimeStr, setSelectedTimeStr] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
