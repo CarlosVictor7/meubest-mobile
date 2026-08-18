@@ -5,6 +5,7 @@ import { HomeScreen } from '@features/matching/screens/HomeScreen';
 import { MatchSearchScreen } from '@features/matching/screens/MatchSearchScreen';
 import { ListenerProfileScreen } from '@features/matching/screens/ListenerProfileScreen';
 import { ScheduleMatchScreen } from '@features/matching/screens/ScheduleMatchScreen';
+import { ExploreScreen } from '@features/explore/screens/ExploreScreen';
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
 
@@ -15,6 +16,7 @@ export function HomeStack() {
       <Stack.Screen name="MatchSearch" component={MatchSearchScreen} />
       <Stack.Screen name="ListenerProfile" component={ListenerProfileScreen} />
       <Stack.Screen name="ScheduleMatch" component={ScheduleMatchScreen} />
+      <Stack.Screen name="Explore" component={ExploreScreen} />
     </Stack.Navigator>
   );
 }
