@@ -14,8 +14,10 @@
  *   o edge-to-edge do Android 15 (`edgeToEdgeEnabled=true`) e o conteúdo desloca.
  * - Sem `autoFocus`: o foco é dado depois da animação de slide, senão o teclado
  *   sobe no meio da transição e a lista inicia deslocada.
- * - O teclado é medido por listener e descontado da altura, em vez de
- *   KeyboardAvoidingView — que é inerte no Android e brigava com o percentual.
+ * - O teclado é medido por listener: a altura dele é descontada do sheet E
+ *   usada para levantar o sheet do rodapé. Com `statusBarTranslucent` a janela
+ *   do Modal NÃO redimensiona sozinha, então só encolher deixaria o sheet
+ *   ancorado atrás do teclado — verificado no Pixel 8 / API 35.
  * - A FlatList é a única região elástica (`flex: 1`); tudo acima dela tem altura
  *   própria. Assim o scroll sempre funciona e o botão X nunca sai da tela.
  */
@@ -215,7 +217,9 @@ export function SelectSheet({
         statusBarTranslucent
         navigationBarTranslucent
       >
-        <View style={styles.container}>
+        {/* `paddingBottom` levanta o sheet acima do teclado. Sem isso ele fica
+            ancorado no rodapé da tela, atrás do teclado. */}
+        <View style={[styles.container, { paddingBottom: keyboardHeight }]}>
           <Pressable
             style={styles.backdrop}
             onPress={close}
