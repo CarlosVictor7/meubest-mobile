@@ -110,7 +110,9 @@ export function HomeScreen() {
   const initials = getInitial(profile);
   const coins = profile?.gratitudeCoins ?? 0;
   const streak = profile?.currentStreak ?? 0;
-  const sessionCount = sessions.length;
+  // Contagem exibida no card SESSÕES: apenas concluídas, para bater com o
+  // rótulo "no histórico". `sessions` inclui pendentes e canceladas.
+  const sessionCount = useMemo(() => filterHistory(sessions).length, [sessions]);
   const rating = profile?.rating?.toFixed(1) ?? '5.0';
   const balance = profile?.balance ?? 0;
   const referralCode = profile?.referralCode ?? '—';

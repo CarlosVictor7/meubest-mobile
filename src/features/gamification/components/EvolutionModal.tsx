@@ -4,11 +4,14 @@ import {
   Text,
   StyleSheet,
   Modal,
+  Pressable,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   FlatList,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Trophy, Target, Award, Lock, ShieldCheck, Flame, Compass, Check } from 'lucide-react-native';
 import {
   collection,
@@ -24,6 +27,7 @@ import { Avatar } from '@shared/components';
 import { UserProfile } from '@models/user';
 import * as Haptics from 'expo-haptics';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getDisplayName } from '@shared/utils/displayName';
 
 
 interface EvolutionModalProps {
@@ -41,6 +45,11 @@ interface Achievement {
 }
 
 export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // 85% da tela, mas nunca invadindo a status bar.
+  const sheetHeight = Math.min(windowHeight * 0.85, windowHeight - insets.top - 24);
+
   const [ranking, setRanking] = useState<any[]>([]);
   const [rankingLoading, setRankingLoading] = useState(true);
   const [rankingError, setRankingError] = useState<string | null>(null);
@@ -119,13 +128,29 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
       transparent
       animationType="slide"
       onRequestClose={handleClose}
+      statusBarTranslucent
+      navigationBarTranslucent
     >
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={handleClose}
-      >
-        <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+      <View style={styles.overlay}>
+        {/* Backdrop separado do sheet. Antes o sheet ficava DENTRO de um
+            TouchableOpacity de tela cheia, o que exigia
+            onStartShouldSetResponder para o conteúdo não fechar o modal —
+            e brigava com o scroll da lista. */}
+        <Pressable
+          style={styles.backdrop}
+          onPress={handleClose}
+          accessibilityRole="button"
+          accessibilityLabel="Fechar"
+        />
+
+        {/* Altura determinística e safe area no rodapé: sem isso o fim do
+            conteúdo ficava sob a barra de gestos. */}
+        <View
+          style={[
+            styles.sheet,
+            { height: sheetHeight, paddingBottom: Math.max(insets.bottom, spacing.md) },
+          ]}
+        >
           {/* Alça visual */}
           <View style={styles.handle} />
 
@@ -149,6 +174,17 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
             contentContainerStyle={styles.scrollContent}
           >
             
+            {/* Estado vazio: usuário que ainda não concluiu nenhuma sessão via
+                um nível 1 com barra zerada e nenhuma explicação. */}
+            {sessionsCount === 0 && currentPoints === 0 && (
+              <View style={styles.emptyMetrics}>
+                <Compass size={22} color={colors.primary} strokeWidth={2} />
+                <Text style={styles.emptyMetricsText}>
+                  Sua evolução começa na primeira conversa. Cada minuto de sessão vira experiência.
+                </Text>
+              </View>
+            )}
+
             {/* 1. Card de Progresso / Nível */}
             <View style={styles.levelCard}>
               <View style={styles.levelHeader}>
@@ -324,12 +360,12 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
                         </View>
 
                         {/* Avatar */}
-                        <Avatar photoURL={user.photoURL} name={user.name} size="sm" />
+                        <Avatar photoURL={user.photoURL} name={getDisplayName(user, 'Apoiador')} size="sm" />
 
                         {/* Dados */}
                         <View style={styles.rankingUserInfo}>
                           <Text style={styles.rankingName} numberOfLines={1}>
-                            {user.name || 'Apoiador'}
+                            {getDisplayName(user, 'Apoiador')}
                           </Text>
                           <Text style={styles.rankingSubtext}>Nível {user.level ?? 1}</Text>
                         </View>
@@ -348,7 +384,7 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
 
           </ScrollView>
         </View>
-      </TouchableOpacity>
+      </View>
     </Modal>
   );
 }
@@ -356,18 +392,20 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(26,26,26,0.55)',
     justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(26,26,26,0.55)',
   },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 40,
     borderTopRightRadius: 40,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
     paddingTop: spacing.sm,
-    maxHeight: '85%',
-    minHeight: '50%',
+    // `height` e `paddingBottom` vêm do cálculo em runtime — percentual sobre
+    // pai sem altura resolvida foi o que quebrou o SelectSheet na Sprint 1.
   },
   handle: {
     width: 44,
@@ -415,7 +453,26 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: spacing.lg,
-    paddingBottom: spacing.xxl + 24,
+    paddingBottom: spacing.lg,
+    flexGrow: 1,
+  },
+
+  emptyMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: `${colors.primary}0D`,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    padding: spacing.md,
+  },
+  emptyMetricsText: {
+    flex: 1,
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
   },
 
   // 1. Card de Nível
