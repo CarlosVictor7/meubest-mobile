@@ -6,6 +6,24 @@
  * - Nome do speaker e listener
  * - Avaliação (estrelas + comentário) se existir
  * Visual fiel ao padrão Meu Best: card branco, borda laranja, tipografia forte.
+ *
+ * ┌── Safe area: por que o header ficava embaixo da status bar ─────────────────┐
+ * │ Esta tela importava `SafeAreaView` do **react-native**. Esse componente só  │
+ * │ faz algo no iOS — no Android ele é um `View` comum, sem inset nenhum.       │
+ * │                                                                            │
+ * │ Com `edgeToEdgeEnabled` ligado (app.config), o Android desenha o conteúdo   │
+ * │ sob a status bar por padrão. O resultado era o header colado no relógio e   │
+ * │ o botão de voltar parcialmente coberto — pior em aparelhos com câmera       │
+ * │ centralizada, onde o recorte invade a área do título.                       │
+ * │                                                                            │
+ * │ A correção usa `SafeAreaView` do **react-native-safe-area-context**, que    │
+ * │ aplica o inset real do dispositivo nas duas plataformas. `edges={['top']}`  │
+ * │ deixa a borda inferior por conta do BottomNav, que já tem folga própria —   │
+ * │ pedir 'bottom' aqui somaria padding duas vezes.                             │
+ * │                                                                            │
+ * │ Nada de `paddingTop` fixo: o inset varia entre notch, Dynamic Island e      │
+ * │ status bar comum.                                                          │
+ * └────────────────────────────────────────────────────────────────────────────┘
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -15,9 +33,10 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
+// SafeAreaView do react-native é NO-OP no Android — ver o bloco de doc no topo.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Calendar,
   Clock,
@@ -44,6 +63,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getCounterpart } from '@features/session/utils/sessionFilters';
+import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -118,7 +138,7 @@ export function SessionDetailScreen() {
 
   if (!session) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView edges={['top']} style={styles.root}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Sessão não encontrada.</Text>
@@ -162,7 +182,7 @@ export function SessionDetailScreen() {
   const sessionIdShort = sessionId.slice(0, 8).toUpperCase();
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView edges={['top']} style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       {/* ── Header com voltar ── */}
@@ -303,7 +323,9 @@ export function SessionDetailScreen() {
           </TouchableOpacity>
         )}
 
-        <View style={{ height: 32 }} />
+        {/* O BottomNav flutua sobre esta tela: sem esta folga, o último botão
+            fica embaixo da barra e não dá para tocar. */}
+        <View style={{ height: BOTTOM_NAV_SCROLL_PAD }} />
       </ScrollView>
     </SafeAreaView>
   );
