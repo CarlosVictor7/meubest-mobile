@@ -14,8 +14,20 @@
  * 3. As sessões vêm de useUserSessions, que consulta os DOIS papéis. Antes a
  *    consulta escolhia o campo pelo papel atual e metade do histórico sumia
  *    quando a pessoa alternava entre Desabafar e Acolher.
+ *
+ * E três correções complementares:
+ *
+ * 4. O histórico revela 5 por vez. Antes despejava tudo o que o hook trouxesse
+ *    — que, por causa do limite da consulta, era bem menos do que existia.
+ *
+ * 5. A seção PRÓXIMAS SESSÕES não some mais quando está vazia. Antes um
+ *    `upcoming.length > 0 &&` apagava a seção inteira, e o usuário não tinha
+ *    como distinguir "não tenho nada agendado" de "a tela não implementou isso".
+ *
+ * 6. Ambas as listas ganharam VER MAIS com a contagem do que falta, para que a
+ *    quantidade restante nunca seja um mistério.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -25,7 +37,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Calendar, Clock, Video, CalendarClock } from 'lucide-react-native';
+import { Calendar, Clock, Video, CalendarClock, ChevronDown } from 'lucide-react-native';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { useNavigation } from '@react-navigation/native';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
@@ -34,6 +46,14 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming, getCounterpart } from '@features/session/utils/sessionFilters';
 import { canJoinSession, describeJoinReason, isUpcomingSession } from '@features/session/utils/sessionWindow';
+import {
+  HISTORY_PAGE_SIZE,
+  UPCOMING_PAGE_SIZE,
+  advance,
+  hasMore,
+  paginate,
+  remaining,
+} from '@features/session/utils/pagination';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -67,6 +87,23 @@ export function SessionsListScreen() {
   );
   const history = useMemo(() => filterHistory(sessions), [sessions]);
 
+  // Quantos itens estão visíveis em cada lista. Estado mínimo de propósito:
+  // a lista visível é sempre um prefixo da completa, então "carregar mais"
+  // não tem como perder o que já estava na tela.
+  const [historyVisible, setHistoryVisible] = useState(HISTORY_PAGE_SIZE);
+  const [upcomingVisible, setUpcomingVisible] = useState(UPCOMING_PAGE_SIZE);
+
+  // Reset só na troca de usuário. Resetar quando a lista muda de tamanho
+  // colapsaria a paginação a cada snapshot do Firestore — inclusive no meio
+  // da leitura de alguém que acabou de tocar em VER MAIS.
+  useEffect(() => {
+    setHistoryVisible(HISTORY_PAGE_SIZE);
+    setUpcomingVisible(UPCOMING_PAGE_SIZE);
+  }, [user?.uid]);
+
+  const upcomingShown = paginate(upcoming, upcomingVisible);
+  const historyShown = paginate(history, historyVisible);
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
@@ -88,22 +125,44 @@ export function SessionsListScreen() {
       >
         <View style={styles.padded}>
           {/* ── Próximas sessões ─────────────────────────────── */}
-          {upcoming.length > 0 && (
-            <View style={[styles.upcomingCard, shadows.sm]}>
-              <View style={styles.upcomingHeader}>
-                <View style={styles.upcomingIconWrap}>
-                  <CalendarClock size={18} color={colors.primary} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.upcomingTitle}>PRÓXIMAS SESSÕES</Text>
+          {/* A seção existe sempre. Sumir quando vazia deixava o usuário sem
+              saber se não tinha nada agendado ou se a tela estava quebrada. */}
+          <View style={[styles.upcomingCard, shadows.sm]}>
+            <View style={styles.upcomingHeader}>
+              <View style={styles.upcomingIconWrap}>
+                <CalendarClock size={18} color={colors.primary} strokeWidth={2.2} />
               </View>
-
-              <View style={styles.list}>
-                {upcoming.map((session) => (
-                  <UpcomingCard key={session.id} session={session} uid={user?.uid} />
-                ))}
-              </View>
+              <Text style={styles.upcomingTitle}>PRÓXIMAS SESSÕES</Text>
             </View>
-          )}
+
+            {loading ? (
+              <Text style={styles.loadingText}>Carregando...</Text>
+            ) : upcoming.length === 0 ? (
+              <Text style={styles.upcomingEmpty}>
+                Nenhuma sessão agendada no momento.
+              </Text>
+            ) : (
+              <>
+                <View style={styles.list}>
+                  {upcomingShown.map((session) => (
+                    <UpcomingCard key={session.id} session={session} uid={user?.uid} />
+                  ))}
+                </View>
+
+                {hasMore(upcoming, upcomingVisible) && (
+                  <LoadMoreButton
+                    label="VER MAIS AGENDADAS"
+                    count={remaining(upcoming, upcomingVisible)}
+                    onPress={() =>
+                      setUpcomingVisible((v) =>
+                        advance(v, upcoming.length, UPCOMING_PAGE_SIZE)
+                      )
+                    }
+                  />
+                )}
+              </>
+            )}
+          </View>
 
           {/* ── Histórico ────────────────────────────────────── */}
           <View style={[styles.historyCard, shadows.sm]}>
@@ -114,11 +173,31 @@ export function SessionsListScreen() {
             ) : history.length === 0 ? (
               <EmptyState />
             ) : (
-              <View style={styles.list}>
-                {history.map((session) => (
-                  <SessionCard key={session.id} session={session} uid={user?.uid} />
-                ))}
-              </View>
+              <>
+                <View style={styles.list}>
+                  {historyShown.map((session) => (
+                    <SessionCard key={session.id} session={session} uid={user?.uid} />
+                  ))}
+                </View>
+
+                {hasMore(history, historyVisible) ? (
+                  <LoadMoreButton
+                    label="VER MAIS"
+                    count={remaining(history, historyVisible)}
+                    onPress={() =>
+                      setHistoryVisible((v) =>
+                        advance(v, history.length, HISTORY_PAGE_SIZE)
+                      )
+                    }
+                  />
+                ) : (
+                  <Text style={styles.historyCountNote}>
+                    {history.length === 1
+                      ? '1 sessão no histórico'
+                      : `${history.length} sessões no histórico`}
+                  </Text>
+                )}
+              </>
             )}
           </View>
         </View>
@@ -242,6 +321,72 @@ const up = StyleSheet.create({
   },
 });
 
+
+/**
+ * Botão de revelar mais itens.
+ *
+ * Mostra quantos faltam. Sem esse número, "VER MAIS" num histórico de 54
+ * sessões não diz se o próximo toque traz 5 ou 40 — e some sem aviso quando
+ * acaba, o que parece bug.
+ */
+function LoadMoreButton({
+  label,
+  count,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={more.button}
+      onPress={onPress}
+      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. Faltam ${count}.`}
+    >
+      <Text style={more.text}>{label}</Text>
+      <View style={more.badge}>
+        <Text style={more.badgeText}>{count}</Text>
+      </View>
+      <ChevronDown size={16} color={colors.primary} strokeWidth={2.5} />
+    </TouchableOpacity>
+  );
+}
+
+const more = StyleSheet.create({
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.background,
+  },
+  text: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.8,
+  },
+  badge: {
+    minWidth: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+  },
+});
 
 // ─── EmptyState ──────────────────────────────────────────────────────────────
 function EmptyState() {
@@ -396,6 +541,21 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.black,
     color: colors.primary,
     letterSpacing: 0.8,
+  },
+
+  upcomingEmpty: {
+    fontSize: typography.size.sm,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 20,
+  },
+
+  historyCountNote: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 
   historyCard: {

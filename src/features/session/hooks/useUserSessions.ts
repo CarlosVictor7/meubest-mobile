@@ -10,8 +10,24 @@
  * esta abordagem usa — `(speakerId, createdAt)` e `(listenerId, createdAt)` —
  * já são exercitados hoje, cada um em um ramo do ternário que estamos removendo.
  *
- * O `limit` é aplicado por consulta e depois de novo sobre o merge, senão o
- * resultado poderia ficar enviesado para o papel com mais sessões.
+ * ┌── Por que o limite subiu de 30 para 300 ────────────────────────────────────┐
+ * │ O limite antigo escondia dados de verdade, não só "as mais antigas".        │
+ * │                                                                             │
+ * │ Medido em produção (leitura, conta real): 114 sessões, 54 concluídas — e a  │
+ * │ tela mostrava 13. A consulta trazia as 30 mais recentes por `createdAt`, e  │
+ * │ 58 das 114 estão `cancelled`. Como o histórico só exibe `completed`, o      │
+ * │ limite era gasto majoritariamente com sessões que a tela descartaria, e 41  │
+ * │ sessões concluídas ficavam inalcançáveis — sem botão e sem aviso.           │
+ * │                                                                             │
+ * │ Filtrar `status == 'completed'` na própria consulta resolveria com menos    │
+ * │ leituras, mas exigiria um índice composto novo — deploy de infraestrutura   │
+ * │ fora do escopo desta correção. Ver ASSUMPTION-01 no walkthrough.            │
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ *
+ * O corte pós-merge foi removido: ele reaplicava o limite sobre a UNIÃO dos dois
+ * papéis, então quem tinha muitas sessões em cada papel perdia parte das duas
+ * listas depois de a consulta já as ter trazido — pagando a leitura e jogando
+ * fora o resultado.
  */
 import { useEffect, useState } from 'react';
 import { collection, query, where, orderBy, limit as fsLimit, onSnapshot } from 'firebase/firestore';
@@ -27,7 +43,7 @@ interface UseUserSessionsResult {
 
 export function useUserSessions(
   uid: string | null | undefined,
-  perQueryLimit = 30
+  perQueryLimit = 300
 ): UseUserSessionsResult {
   const [asSpeaker, setAsSpeaker] = useState<SessionLike[] | null>(null);
   const [asListener, setAsListener] = useState<SessionLike[] | null>(null);
@@ -82,7 +98,7 @@ export function useUserSessions(
   const loading = asSpeaker === null || asListener === null;
 
   return {
-    sessions: loading ? [] : mergeSessions(asSpeaker, asListener).slice(0, perQueryLimit),
+    sessions: loading ? [] : mergeSessions(asSpeaker, asListener),
     loading,
     error: speakerFailed && listenerFailed,
   };
