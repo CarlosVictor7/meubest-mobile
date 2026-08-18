@@ -53,6 +53,7 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary } from '@shared/services/paymentService';
 import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getFirstName, getInitial } from '@shared/utils/displayName';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -98,8 +99,8 @@ export function HomeScreen() {
 
 
   const isListener = profile?.role === 'listener';
-  const name = profile?.name?.split(' ')[0] ?? 'amigo(a)';
-  const initials = (profile?.name ?? 'U').charAt(0).toUpperCase();
+  const name = getFirstName(profile, 'amigo(a)');
+  const initials = getInitial(profile);
   const coins = profile?.gratitudeCoins ?? 0;
   const streak = profile?.currentStreak ?? 0;
   const sessionCount = sessions.length;

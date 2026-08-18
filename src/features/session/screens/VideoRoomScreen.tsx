@@ -35,6 +35,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius } from '@constants/theme';
 import { InCallTipModal } from '@features/session/components/InCallTipModal';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getFirstName } from '@shared/utils/displayName';
 
 // ─── JavaScript injetado na WebView — Bridge Jitsi → React Native ──────────
 // Detecta:
@@ -693,7 +694,7 @@ export function VideoRoomScreen() {
   const jitsiRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
   // Usar apenas o primeiro nome para evitar exibição de '%20' na interface do Jitsi.
   // encodeURIComponent é aplicado somente no primeiro nome, sem espaços.
-  const firstName = (profile?.name || 'Usuário').split(' ')[0];
+  const firstName = getFirstName(profile, 'Usuário');
   const displayName = encodeURIComponent(firstName);
   // config.startWithAudioMuted=false garante que o microfone não inicia mudo.
   // config.startWithVideoMuted=false garante que a câmera não inicia desligada.
