@@ -20,7 +20,22 @@ export type HomeStackParamList = {
   Home: undefined;
   MatchSearch: { category: string };
   ListenerProfile: { listenerId: string };
-  ScheduleMatch: { listenerId?: string };
+  /**
+   * `rebook` chega do "AGENDAR NOVAMENTE" no detalhe de uma sessão concluída.
+   * Carrega os papéis ORIGINAIS: quem desabafou continua desabafando e quem
+   * acolheu continua acolhendo, independentemente de quem apertou o botão.
+   */
+  ScheduleMatch: {
+    listenerId?: string;
+    rebook?: {
+      sessionId: string;
+      speakerId: string;
+      listenerId: string;
+      listenerName?: string;
+      category?: string;
+      duration?: number;
+    };
+  };
 };
 
 // ─── Session Modal Stack ──────────────────────────────────────────

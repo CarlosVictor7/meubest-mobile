@@ -27,6 +27,7 @@ import {
   Video,
   ShieldCheck,
   MessageCircle,
+  CalendarPlus,
 } from 'lucide-react-native';
 import {
   doc,
@@ -42,6 +43,7 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getCounterpart } from '@features/session/utils/sessionFilters';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
@@ -156,6 +158,7 @@ export function SessionDetailScreen() {
   const speakerName  = session.speakerName  ?? 'Ouvinte';
   const listenerName = session.listenerName ?? 'Apoiador';
   const isSpeaker    = user?.uid === session.speakerId;
+  const counterpart  = getCounterpart(session, user?.uid);
   const sessionIdShort = sessionId.slice(0, 8).toUpperCase();
 
   return (
@@ -241,6 +244,52 @@ export function SessionDetailScreen() {
             <Text style={styles.noReviewText}>Nenhuma avaliação registrada para esta sessão.</Text>
           </View>
         ) : null}
+
+        {/* ── Agendar novamente com a mesma pessoa ─────────────────────────
+            Disponível nos DOIS papéis e nas DUAS plataformas: reagendar não é
+            uma ação financeira. A sessão nova preserva os papéis ORIGINAIS —
+            quem desabafou continua desabafando — independentemente de quem
+            apertou o botão. */}
+        {status === 'completed' && counterpart && isSpeaker && (
+          <TouchableOpacity
+            style={[styles.rebookButton, shadows.sm]}
+            onPress={() =>
+              (navigation as any).navigate('HomeTab', {
+                screen: 'ScheduleMatch',
+                params: {
+                  rebook: {
+                    sessionId,
+                    speakerId: session.speakerId,
+                    listenerId: session.listenerId,
+                    listenerName: session.listenerName,
+                    category: session.category,
+                    duration: session.duration,
+                  },
+                },
+              })
+            }
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Agendar novamente com ${counterpart.name}`}
+          >
+            <CalendarPlus size={16} color={colors.primary} strokeWidth={2.4} />
+            <Text style={styles.rebookButtonText}>AGENDAR NOVAMENTE</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Para o acolhedor o botão não aparece: as Firestore Rules exigem
+            `speakerId == request.auth.uid` na criação de sessão
+            (firestore.rules:135), então ele não consegue criar o agendamento —
+            a tentativa falharia com permission-denied. Habilitar isso exige
+            mudança de Rules, que é assunto da Sprint 6. */}
+        {status === 'completed' && counterpart && !isSpeaker && (
+          <View style={[styles.rebookNote, shadows.sm]}>
+            <CalendarPlus size={16} color={colors.textMutedValue} strokeWidth={2.2} />
+            <Text style={styles.rebookNoteText}>
+              Um novo encontro com {counterpart.name} parte de quem foi acolhido.
+            </Text>
+          </View>
+        )}
 
         {/* ── Botão de gorjeta se speaker e sessão concluída (Android apenas) ── */}
         {FINANCIAL_FEATURES_ENABLED && isSpeaker && status === 'completed' && session.listenerId && (
@@ -475,6 +524,43 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     paddingVertical: spacing.md,
     marginTop: spacing.xs,
+  },
+  rebookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+  },
+  rebookButtonText: {
+    color: colors.primary,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.8,
+  },
+  rebookNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
+  },
+  rebookNoteText: {
+    flex: 1,
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
   },
   tipButtonText: {
     color: colors.textInverted,
