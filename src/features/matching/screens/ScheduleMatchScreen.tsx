@@ -37,6 +37,7 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { SESSION_THEMES } from '@constants/config';
+import { getDisplayName, getInitial } from '@shared/utils/displayName';
 
 const { width, height } = Dimensions.get('window');
 
@@ -127,7 +128,8 @@ export function ScheduleMatchScreen() {
       // Esses casos são tratados pelo useIncomingCall (que lê o doc do speaker
       // uma vez ao exibir o modal) e pela transaction de aceite.
 
-      const nameMatch = v.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+      // Busca pelo nome PÚBLICO (preferredName com fallback em name).
+      const nameMatch = getDisplayName(v, '').toLowerCase().includes(searchQuery.toLowerCase());
       const bioMatch = v.bio?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
       const matchesSearch = searchQuery === '' || nameMatch || bioMatch;
 
@@ -182,10 +184,11 @@ export function ScheduleMatchScreen() {
       const sessionData = {
         speakerId: user.uid,
         speakerEmail: user.email || '',
-        speakerName: profile?.name || user.displayName || 'Usuário',
+        speakerName: getDisplayName(profile, user.displayName || 'Usuário'),
         listenerId: bookingMode === 'specific' ? selectedVolunteer.id : null,
         listenerEmail: bookingMode === 'specific' ? (selectedVolunteer.email || null) : null,
-        listenerName: bookingMode === 'specific' ? (selectedVolunteer.name || 'Voluntário') : null,
+        listenerName:
+          bookingMode === 'specific' ? getDisplayName(selectedVolunteer, 'Voluntário') : null,
         status: 'pending',
         category: selectedTheme,
         duration: selectedDuration,
@@ -457,7 +460,7 @@ export function ScheduleMatchScreen() {
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => {
-                const initials = item.name ? item.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : 'V';
+                const initials = getInitial(item);
                 return (
                   <TouchableOpacity
                     style={[styles.volunteerCard, shadows.sm]}
@@ -471,7 +474,7 @@ export function ScheduleMatchScreen() {
                       <Text style={styles.avatarInitials}>{initials}</Text>
                     </View>
                     <View style={styles.volunteerDetails}>
-                      <Text style={styles.volunteerName}>{item.name}</Text>
+                      <Text style={styles.volunteerName}>{getDisplayName(item, 'Voluntário')}</Text>
                       <Text style={styles.volunteerBio} numberOfLines={2}>
                         {item.bio || 'Voluntário atencioso disponível para ouvir você.'}
                       </Text>
@@ -516,12 +519,12 @@ export function ScheduleMatchScreen() {
               <View style={styles.smallVolunteerCard}>
                 <View style={styles.smallAvatar}>
                   <Text style={styles.smallAvatarInitials}>
-                    {selectedVolunteer.name ? selectedVolunteer.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : 'V'}
+                    {getInitial(selectedVolunteer)}
                   </Text>
                 </View>
                 <View>
                   <Text style={styles.smallVolunteerLabel}>VOLUNTÁRIO SELECIONADO</Text>
-                  <Text style={styles.smallVolunteerName}>{selectedVolunteer.name}</Text>
+                  <Text style={styles.smallVolunteerName}>{getDisplayName(selectedVolunteer, 'Voluntário')}</Text>
                 </View>
               </View>
             )}

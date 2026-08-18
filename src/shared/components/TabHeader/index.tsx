@@ -28,6 +28,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
 import { EvolutionModal } from '@features/gamification/components/EvolutionModal';
 import { COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getDisplayName, getFirstName, getInitial } from '@shared/utils/displayName';
 
 
 // Chave de persistência da preferência Online do modo Apoiar
@@ -138,8 +139,8 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
 
   const isListener = activeRole === 'listener';
 
-  const name     = profile?.name?.split(' ')[0] ?? 'amigo(a)';
-  const initials = (profile?.name ?? 'U').charAt(0).toUpperCase();
+  const name     = getFirstName(profile, 'amigo(a)');
+  const initials = getInitial(profile);
   const coins    = profile?.gratitudeCoins ?? 0;
   const streak   = profile?.currentStreak  ?? 0;
 
@@ -216,7 +217,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           {/* Avatar + saudação */}
           <View style={styles.avatarRow}>
             {profile?.photoURL ? (
-              <Avatar photoURL={profile.photoURL} name={profile.name} size="sm" />
+              <Avatar photoURL={profile.photoURL} name={getDisplayName(profile)} size="sm" />
             ) : (
               <View style={styles.avatarInitial}>
                 <Text style={styles.avatarInitialText}>{initials}</Text>

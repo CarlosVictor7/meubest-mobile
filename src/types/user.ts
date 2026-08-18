@@ -12,9 +12,21 @@ export interface BankDetails {
 
 export interface UserProfile {
   uid: string;
+  /**
+   * Nome legado/original vindo do provider (Google/Apple/Firebase).
+   * NUNCA é sobrescrito por telas de perfil — só `googleAuth`/`appleAuth` escrevem aqui.
+   * Para exibir o nome de uma pessoa, use `getDisplayName()` de `@shared/utils/displayName`.
+   */
   name: string;
   email: string;
   role: UserRole;
+  /**
+   * Nome público escolhido pelo usuário ("Como você quer ser chamado?").
+   * Opcional no tipo por compatibilidade: usuários antigos não têm o campo.
+   * Obrigatório na UI de cadastro novo (validação de etapa do ProfileForm).
+   */
+  preferredName?: string;
+  /** "Sobre você" — texto livre opcional, limitado a BIO_MAX_LENGTH caracteres. */
   bio?: string;
   city?: string;
   state?: string;

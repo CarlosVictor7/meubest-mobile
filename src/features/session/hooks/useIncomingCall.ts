@@ -23,6 +23,7 @@ import { db } from '@shared/services/firebase';
 import { SESSION_THEMES } from '@constants/config';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserProfile } from '@models/user';
+import { getDisplayName } from '@shared/utils/displayName';
 
 export interface IncomingCallSession {
   id: string;
@@ -264,7 +265,7 @@ export function useIncomingCall(
           transaction.update(sessionRef, {
             listenerId: user.uid,
             listenerEmail: user.email ?? null,
-            listenerName: profile.name ?? 'Apoiador',
+            listenerName: getDisplayName(profile, 'Apoiador'),
             status: 'active',
             acceptedAt: serverTimestamp(),
           });
@@ -282,7 +283,7 @@ export function useIncomingCall(
         setIsAccepting(false);
       }
     },
-    [user?.uid, profile?.name, user?.email]
+    [user?.uid, profile?.name, profile?.preferredName, user?.email]
   );
 
   return { incomingSession, dismissSession, acceptSession, isAccepting };
