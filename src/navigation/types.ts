@@ -57,6 +57,8 @@ export type ProfileStackParamList = {
 
 // ─── Root ─────────────────────────────────────────────────────────
 export type RootStackParamList = {
+  /** Splash do gate de bootstrap — ver `useBootstrap`. */
+  Bootstrap: undefined;
   Auth: undefined;
   ProfileForm: undefined;
   ProfileError: undefined;  // Tela de erro quando Firestore falha transitoriamente

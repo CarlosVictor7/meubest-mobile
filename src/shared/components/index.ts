@@ -6,6 +6,7 @@ export { Card } from './Card';
 export { Avatar } from './Avatar';
 export { BlackCard } from './BlackCard';
 export { NoticeCard } from './NoticeCard';
+export { NoticeStrip } from './NoticeStrip';
 export { StatsCard } from './StatsCard';
 export { SegmentedControl } from './SegmentedControl';
 export { BottomNav, BOTTOM_NAV_SCROLL_PAD, BOTTOM_NAV_BAR_HEIGHT } from './BottomNav';

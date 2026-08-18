@@ -24,6 +24,7 @@ import { SESSION_THEMES } from '@constants/config';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserProfile } from '@models/user';
 import { getDisplayName } from '@shared/utils/displayName';
+import { canActAsListener } from '@shared/utils/listener';
 
 export interface IncomingCallSession {
   id: string;
@@ -74,8 +75,11 @@ export function useIncomingCall(
   useEffect(() => {
     // Só ativa para apoiadores (listener) online
     if (!user || !profile) return;
-    if (profile.role !== 'listener') {
-      console.log('[IncomingCall] skipped (not listener)');
+    // PREPARACAO Sprint 2: hoje o helper devolve exatamente `role === 'listener'`.
+    // Na Sprint 6 ele passa a exigir listenerStatus === 'approved' e o
+    // enforcement vale aqui sem tocar neste arquivo.
+    if (!canActAsListener(profile)) {
+      console.log('[IncomingCall] skipped (nao pode acolher)');
       return;
     }
     if (!profile.isOnline) {
@@ -161,35 +165,63 @@ export function useIncomingCall(
           `[IncomingCall] compatible session: ${session.id} | theme: ${session.category} | match: ${hasCompatibleInterest}`
         );
 
-        // Revalidar no Firestore antes de exibir:
-        // - sessão ainda pending
-        // - 2. speaker não me bloqueou (lê doc do speaker, sem mudar Rules)
+        /**
+         * Revalida a sessão antes de exibir o modal.
+         *
+         * ┌── Por que as duas leituras são separadas ────────────────────────────┐
+         * │ Antes, esta função fazia `Promise.all([sessão, doc do speaker])`.    │
+         * │ As Rules publicadas permitem ler /users/{id} apenas quando o doc     │
+         * │ lido tem `role == 'listener'` (ou o leitor é dono/admin). O speaker  │
+         * │ tem `role == 'speaker'` — a leitura é NEGADA.                        │
+         * │                                                                      │
+         * │ Com `Promise.all`, essa negação derrubava a promise inteira, caía no │
+         * │ catch, e `setIncomingSession` nunca era chamado: o modal de chamada  │
+         * │ recebida SIMPLESMENTE NÃO APARECIA para acolhedores comuns.          │
+         * │ Passou despercebido porque as contas admin listadas nas Rules        │
+         * │ escapam da restrição e viam o modal normalmente.                     │
+         * └──────────────────────────────────────────────────────────────────────┘
+         *
+         * Agora: a revalidação da sessão é obrigatória; a leitura do doc do
+         * speaker é best-effort. A segurança não depende dela — o bloqueio já
+         * foi verificado acima via `speakerBlockedUserIds`, gravado na própria
+         * sessão no momento da criação, e a transaction de aceite revalida tudo.
+         */
         const showIfStillPending = async () => {
+          // 1. Obrigatório: a sessão ainda está disponível?
+          let data;
           try {
-            const [sessionSnap, speakerSnap] = await Promise.all([
-              getDoc(doc(db, 'sessions', session.id)),
-              getDoc(doc(db, 'users', session.speakerId)),
-            ]);
-
+            const sessionSnap = await getDoc(doc(db, 'sessions', session.id));
             if (!sessionSnap.exists()) return;
-            const data = sessionSnap.data();
+            data = sessionSnap.data();
             if (data.status !== 'pending' || data.listenerId !== null) return;
+          } catch (err) {
+            console.warn('[IncomingCall] Falha ao revalidar a sessão:', err);
+            return;
+          }
 
-            // 2. Verificar se o speaker me bloqueou
+          // 2. Best-effort: confirmação ao vivo do bloqueio do lado do speaker.
+          //    Falha aqui NÃO impede o modal — ver bloco acima.
+          try {
+            const speakerSnap = await getDoc(doc(db, 'users', session.speakerId));
             if (speakerSnap.exists()) {
-              const speakerData = speakerSnap.data();
-              const speakerBlockedIds: string[] = speakerData.blockedUserIds ?? [];
+              const speakerBlockedIds: string[] = speakerSnap.data().blockedUserIds ?? [];
               if (speakerBlockedIds.includes(user.uid)) {
                 console.log(`[IncomingCall] skipped (I am blocked by speaker): ${session.id}`);
                 seenIds.current.add(session.id);
                 return;
               }
             }
-
-            setIncomingSession(session);
-          } catch (err) {
-            console.warn('[IncomingCall] Error checking block status:', err);
+          } catch {
+            // Leitura negada pelas Rules é o caso ESPERADO para acolhedores
+            // comuns. O filtro por `speakerBlockedUserIds` da própria sessão
+            // já cobriu o bloqueio.
+            console.log(
+              '[IncomingCall] verificacao ao vivo do bloqueio indisponivel — ' +
+                'seguindo com speakerBlockedUserIds da sessao'
+            );
           }
+
+          setIncomingSession(session);
         };
 
         if (hasCompatibleInterest) {

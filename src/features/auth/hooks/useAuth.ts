@@ -14,14 +14,18 @@ export function useAuth() {
   const logout = async () => {
     try {
       if (user) {
-        // Limpa as credenciais de push no banco antes do signOut
+        // Limpa credenciais de push E derruba a presenca antes do signOut.
+        // Sem isOnline: false aqui, um acolhedor que sai do app continua
+        // aparecendo como disponivel e recebendo chamadas.
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
+          isOnline: false,
+          lastSeenAt: new Date().toISOString(),
           pushToken: deleteField(),
           pushTokenPlatform: deleteField(),
           pushTokenUpdatedAt: deleteField(),
         }).catch((e) => {
-          console.warn('[useAuth] Falha ao limpar push token no Firestore durante logout:', e);
+          console.warn('[useAuth] Falha ao limpar presenca/push no Firestore durante logout:', e);
         });
       }
       await signOut(auth);

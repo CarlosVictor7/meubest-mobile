@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ONBOARDING_SEEN_KEY } from '@shared/hooks/useBootstrap';
 import {
   View,
   Text,
@@ -73,7 +74,7 @@ export function OnboardingScreen() {
 
   const handleFinish = async () => {
     try {
-      await AsyncStorage.setItem('@meubest:onboarding_seen', 'true');
+      await AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
     } catch (e) {
       console.error('Error saving onboarding_seen:', e);
     }
