@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   Video,
   ChevronRight,
+  Compass,
 } from 'lucide-react-native';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
@@ -314,6 +315,34 @@ export function HomeScreen() {
               </View>
 
             </View>
+          )}
+
+          {/* ─── Explorar acolhedores ─────────────────────────────────
+              Entrada do módulo. Fica aqui, e não como quinta aba, porque o
+              BottomNav já tem 4 abas no Android e 3 no iOS mais o botão
+              central — ver ADR-006. */}
+          {!isListener && (
+            <TouchableOpacity
+              style={[styles.exploreCard, shadows.sm]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation.navigate('Explore');
+              }}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Explorar acolhedores disponíveis"
+            >
+              <View style={styles.exploreIconWrap}>
+                <Compass size={22} color={colors.primary} strokeWidth={2.2} />
+              </View>
+              <View style={styles.exploreText}>
+                <Text style={styles.exploreTitle}>EXPLORAR ACOLHEDORES</Text>
+                <Text style={styles.exploreSubtitle}>
+                  Veja quem está disponível e escolha com quem falar.
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.primary} strokeWidth={2.4} />
+            </TouchableOpacity>
           )}
 
           {/* StartModal — mesmo fluxo do botão central COMEÇAR */}
@@ -896,6 +925,36 @@ const styles = StyleSheet.create({
   },
 
   // ─── Cards de Ação — Modo Ouvir ─────────────────────────────────
+  exploreCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    padding: spacing.md,
+  },
+  exploreIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    backgroundColor: `${colors.primary}12`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exploreText: { flex: 1, gap: 2 },
+  exploreTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.3,
+  },
+  exploreSubtitle: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+  },
   actionGrid: {
     gap: spacing.md,
   },

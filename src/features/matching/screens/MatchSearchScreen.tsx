@@ -31,7 +31,16 @@ const COMFORT_PHRASES = [
 export function MatchSearchScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { category } = route.params || { category: 'Conversa' };
+  const { category, directedSessionId, listenerName } = (route.params || {
+    category: 'Conversa',
+  }) as { category: string; directedSessionId?: string; listenerName?: string };
+
+  /**
+   * Chamada direcionada: a sessão JÁ FOI criada pelo Explorar, com
+   * `listenerId` preenchido. Aqui só acompanhamos o aceite — criar outra
+   * sessão duplicaria o chamado.
+   */
+  const isDirected = typeof directedSessionId === 'string' && directedSessionId.length > 0;
   
   const { user, profile } = useAuth();
   const [status, setStatus] = useState<'searching' | 'timeout' | 'error'>('searching');
@@ -122,13 +131,19 @@ export function MatchSearchScreen() {
         createdAt: serverTimestamp(),
       };
 
-      const docRef = await addDoc(collection(db, 'sessions'), sessionData);
-      sessionIdRef.current = docRef.id;
-      console.log(`[MatchSearch] Session created in Firestore with ID: ${docRef.id}`);
+      // Chamada direcionada reaproveita a sessão criada pelo Explorar.
+      const sessionId = isDirected
+        ? (directedSessionId as string)
+        : (await addDoc(collection(db, 'sessions'), sessionData)).id;
+
+      sessionIdRef.current = sessionId;
+      console.log(
+        `[MatchSearch] ${isDirected ? 'Acompanhando sessão direcionada' : 'Sessão criada'}: ${sessionId}`
+      );
 
       // Inicia a escuta da sessão em tempo real via onSnapshot
       console.log('[MatchSearch] Listening session...');
-      unsubscribeRef.current = onSnapshot(doc(db, 'sessions', docRef.id), (snap) => {
+      unsubscribeRef.current = onSnapshot(doc(db, 'sessions', sessionId), (snap) => {
         if (snap.exists()) {
           const data = snap.data();
           
@@ -138,7 +153,7 @@ export function MatchSearchScreen() {
             cleanupSearch(false); // Mantém a sessão no Firestore, limpa local
             
             // Navega diretamente para o fluxo nativo da sessão (SessionNavigator)
-            navigation.navigate('Session', { sessionId: docRef.id });
+            navigation.navigate('Session', { sessionId });
           }
         }
       }, (err) => {

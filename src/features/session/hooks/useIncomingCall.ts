@@ -1,7 +1,18 @@
 /**
  * useIncomingCall — Hook de chamados imediatos para apoiadores
  *
- * Replicado da lógica do Web (Dashboard.tsx linhas 1018–1046):
+ * Escuta DUAS filas ao mesmo tempo:
+ *
+ *   broadcast    status='pending' + type='immediate' + listenerId=null
+ *                qualquer acolhedor online pode atender
+ *
+ *   direcionada  status='pending' + type='immediate' + listenerId=<meu uid>
+ *                alguém escolheu ESTA pessoa no Explorar
+ *
+ * A chamada direcionada não espera os 15 s de prioridade por tema: o alvo é
+ * explícito, não há disputa a arbitrar.
+ *
+ * Original baseado na lógica do Web (Dashboard.tsx linhas 1018–1046):
  * - Escuta sessions com status='pending' e listenerId=null e type='immediate'
  * - Prioriza apoiadores com tema compatível (notifica imediato)
  * - Apoiadores online sem tema compatível recebem após 15s
@@ -37,6 +48,8 @@ export interface IncomingCallSession {
   status: string;
   /** UIDs bloqueados pelo speaker (copiado do profile no momento da criação da sessão) */
   speakerBlockedUserIds?: string[];
+  /** true quando o speaker escolheu este acolhedor pelo Explorar. */
+  directed?: boolean;
 }
 
 interface UseIncomingCallResult {
@@ -89,155 +102,157 @@ export function useIncomingCall(
 
     console.log('[IncomingCall] listener active');
 
-    const q = query(
-      collection(db, 'sessions'),
-      where('status', '==', 'pending'),
-      where('listenerId', '==', null),
-      where('type', '==', 'immediate')
-    );
+    /**
+     * Uma única função para as duas filas. O `seenIds` é compartilhado, então
+     * uma sessão nunca é exibida duas vezes mesmo se aparecesse nas duas.
+     */
+    const subscribe = (kind: 'broadcast' | 'directed') => {
+      const q =
+        kind === 'broadcast'
+          ? query(
+              collection(db, 'sessions'),
+              where('status', '==', 'pending'),
+              where('type', '==', 'immediate'),
+              where('listenerId', '==', null)
+            )
+          : query(
+              collection(db, 'sessions'),
+              where('status', '==', 'pending'),
+              where('type', '==', 'immediate'),
+              where('listenerId', '==', user.uid)
+            );
 
-    let isInitialLoad = true;
+      let isInitialLoad = true;
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      // Na primeira execução, populamos o Set com IDs existentes para não notificar
-      // chamados antigos (espelha a técnica isInitialRandom do Web)
-      if (isInitialLoad) {
-        snapshot.docs.forEach((d) => seenIds.current.add(d.id));
-        isInitialLoad = false;
-        console.log(
-          `[IncomingCall] pending sessions found: ${snapshot.docs.length} (initial load, skipping)`
-        );
-        return;
-      }
-
-      snapshot.docChanges().forEach((change) => {
-        if (change.type !== 'added') return;
-
-        const session = {
-          id: change.doc.id,
-          ...(change.doc.data() as Omit<IncomingCallSession, 'id'>),
-        } as IncomingCallSession;
-
-        // Já visto ou recusado localmente
-        if (seenIds.current.has(session.id)) {
-          console.log(`[IncomingCall] skipped (already seen): ${session.id}`);
-          return;
-        }
-
-        // Não mostrar chamado criado pelo próprio usuário
-        if (session.speakerId === user.uid) {
-          console.log(`[IncomingCall] skipped (own session): ${session.id}`);
-          seenIds.current.add(session.id);
-          return;
-        }
-
-        // ── Filtro de bloqueio (ambos os sentidos) ─────────────────────
-        // 1. Se EU bloqueei o speaker → ignorar (check imediato com dados locais)
-        const myBlockedIds = profileRef.current?.blockedUserIds ?? [];
-        if (myBlockedIds.includes(session.speakerId)) {
-          console.log(`[IncomingCall] skipped (speaker blocked by me): ${session.id}`);
-          seenIds.current.add(session.id);
-          return;
-        }
-
-        // 2. Se o speaker me bloqueou → check imediato via speakerBlockedUserIds
-        //    (campo salvo na sessão pelo MatchSearchScreen)
-        const speakerBlockedInSession: string[] = session.speakerBlockedUserIds ?? [];
-        if (speakerBlockedInSession.includes(user.uid)) {
-          console.log(`[IncomingCall] skipped (I am blocked by speaker, via session field): ${session.id}`);
-          seenIds.current.add(session.id);
-          return;
-        }
-
-        // Marcar como visto para evitar duplicação
-        seenIds.current.add(session.id);
-
-        // ── Verificar compatibilidade de tema ─────────────────────────────
-        const themeId = SESSION_THEMES.find(
-          (t) => t.label === session.category
-        )?.id as string | undefined;
-
-        const hasCompatibleInterest =
-          themeId !== undefined &&
-          (profileRef.current?.interests ?? []).includes(themeId);
-
-        console.log(
-          `[IncomingCall] compatible session: ${session.id} | theme: ${session.category} | match: ${hasCompatibleInterest}`
-        );
-
-        /**
-         * Revalida a sessão antes de exibir o modal.
-         *
-         * ┌── Por que as duas leituras são separadas ────────────────────────────┐
-         * │ Antes, esta função fazia `Promise.all([sessão, doc do speaker])`.    │
-         * │ As Rules publicadas permitem ler /users/{id} apenas quando o doc     │
-         * │ lido tem `role == 'listener'` (ou o leitor é dono/admin). O speaker  │
-         * │ tem `role == 'speaker'` — a leitura é NEGADA.                        │
-         * │                                                                      │
-         * │ Com `Promise.all`, essa negação derrubava a promise inteira, caía no │
-         * │ catch, e `setIncomingSession` nunca era chamado: o modal de chamada  │
-         * │ recebida SIMPLESMENTE NÃO APARECIA para acolhedores comuns.          │
-         * │ Passou despercebido porque as contas admin listadas nas Rules        │
-         * │ escapam da restrição e viam o modal normalmente.                     │
-         * └──────────────────────────────────────────────────────────────────────┘
-         *
-         * Agora: a revalidação da sessão é obrigatória; a leitura do doc do
-         * speaker é best-effort. A segurança não depende dela — o bloqueio já
-         * foi verificado acima via `speakerBlockedUserIds`, gravado na própria
-         * sessão no momento da criação, e a transaction de aceite revalida tudo.
-         */
-        const showIfStillPending = async () => {
-          // 1. Obrigatório: a sessão ainda está disponível?
-          let data;
-          try {
-            const sessionSnap = await getDoc(doc(db, 'sessions', session.id));
-            if (!sessionSnap.exists()) return;
-            data = sessionSnap.data();
-            if (data.status !== 'pending' || data.listenerId !== null) return;
-          } catch (err) {
-            console.warn('[IncomingCall] Falha ao revalidar a sessão:', err);
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          // Na primeira execução populamos o Set com os IDs existentes para não
+          // notificar chamados antigos (espelha a técnica isInitialRandom do Web).
+          if (isInitialLoad) {
+            snapshot.docs.forEach((d) => seenIds.current.add(d.id));
+            isInitialLoad = false;
+            console.log(
+              `[IncomingCall] ${kind}: ${snapshot.docs.length} pendente(s) na carga inicial, ignorando`
+            );
             return;
           }
 
-          // 2. Best-effort: confirmação ao vivo do bloqueio do lado do speaker.
-          //    Falha aqui NÃO impede o modal — ver bloco acima.
-          try {
-            const speakerSnap = await getDoc(doc(db, 'users', session.speakerId));
-            if (speakerSnap.exists()) {
-              const speakerBlockedIds: string[] = speakerSnap.data().blockedUserIds ?? [];
-              if (speakerBlockedIds.includes(user.uid)) {
-                console.log(`[IncomingCall] skipped (I am blocked by speaker): ${session.id}`);
-                seenIds.current.add(session.id);
+          snapshot.docChanges().forEach((change) => {
+            if (change.type !== 'added') return;
+
+            const session = {
+              id: change.doc.id,
+              ...(change.doc.data() as Omit<IncomingCallSession, 'id'>),
+            } as IncomingCallSession;
+
+            if (seenIds.current.has(session.id)) return;
+
+            // Não mostrar chamado criado pelo próprio usuário.
+            if (session.speakerId === user.uid) {
+              seenIds.current.add(session.id);
+              return;
+            }
+
+            // ── Filtro de bloqueio, nos dois sentidos ──────────────────────
+            const myBlockedIds = profileRef.current?.blockedUserIds ?? [];
+            if (myBlockedIds.includes(session.speakerId)) {
+              console.log(`[IncomingCall] ignorado (bloqueei o speaker): ${session.id}`);
+              seenIds.current.add(session.id);
+              return;
+            }
+
+            const speakerBlockedInSession: string[] = session.speakerBlockedUserIds ?? [];
+            if (speakerBlockedInSession.includes(user.uid)) {
+              console.log(`[IncomingCall] ignorado (fui bloqueado pelo speaker): ${session.id}`);
+              seenIds.current.add(session.id);
+              return;
+            }
+
+            seenIds.current.add(session.id);
+
+            /**
+             * Revalida a sessão antes de exibir o modal.
+             *
+             * ┌── Por que as duas leituras são separadas ────────────────────┐
+             * │ Antes isto era um `Promise.all([sessão, doc do speaker])`.   │
+             * │ As Rules publicadas só permitem ler /users/{id} quando o doc │
+             * │ tem `role == 'listener'` (ou o leitor é dono/admin). O       │
+             * │ speaker tem `role == 'speaker'` — a leitura é NEGADA, e com  │
+             * │ Promise.all isso derrubava tudo e o modal nunca aparecia.    │
+             * └──────────────────────────────────────────────────────────────┘
+             */
+            const showIfStillPending = async () => {
+              let data;
+              try {
+                const sessionSnap = await getDoc(doc(db, 'sessions', session.id));
+                if (!sessionSnap.exists()) return;
+                data = sessionSnap.data();
+                if (data.status !== 'pending') return;
+                // Broadcast: alguém pode ter aceitado no meio do caminho.
+                // Direcionada: `listenerId` já é o meu uid desde a criação.
+                if (kind === 'broadcast' && data.listenerId !== null) return;
+                if (kind === 'directed' && data.listenerId !== user.uid) return;
+              } catch (err) {
+                console.warn('[IncomingCall] Falha ao revalidar a sessão:', err);
                 return;
               }
+
+              // Best-effort: confirmação ao vivo do bloqueio do lado do speaker.
+              // Falha aqui NÃO impede o modal — ver bloco acima.
+              try {
+                const speakerSnap = await getDoc(doc(db, 'users', session.speakerId));
+                if (speakerSnap.exists()) {
+                  const speakerBlockedIds: string[] = speakerSnap.data().blockedUserIds ?? [];
+                  if (speakerBlockedIds.includes(user.uid)) {
+                    seenIds.current.add(session.id);
+                    return;
+                  }
+                }
+              } catch {
+                console.log(
+                  '[IncomingCall] verificacao ao vivo do bloqueio indisponivel — ' +
+                    'seguindo com speakerBlockedUserIds da sessao'
+                );
+              }
+
+              setIncomingSession(session);
+            };
+
+            if (kind === 'directed') {
+              // Alvo explícito: sem espera de prioridade por tema.
+              showIfStillPending();
+              return;
             }
-          } catch {
-            // Leitura negada pelas Rules é o caso ESPERADO para acolhedores
-            // comuns. O filtro por `speakerBlockedUserIds` da própria sessão
-            // já cobriu o bloqueio.
-            console.log(
-              '[IncomingCall] verificacao ao vivo do bloqueio indisponivel — ' +
-                'seguindo com speakerBlockedUserIds da sessao'
-            );
-          }
 
-          setIncomingSession(session);
-        };
+            const themeId = SESSION_THEMES.find((t) => t.label === session.category)?.id as
+              | string
+              | undefined;
+            const hasCompatibleInterest =
+              themeId !== undefined && (profileRef.current?.interests ?? []).includes(themeId);
 
-        if (hasCompatibleInterest) {
-          // Notifica imediatamente para quem tem o tema compatível
-          showIfStillPending();
-        } else {
-          // Aguarda 15s — dá prioridade aos apoiadores com matching de tema
-          const timeout = setTimeout(showIfStillPending, 15000);
-          pendingTimeouts.current.push(timeout);
+            if (hasCompatibleInterest) {
+              showIfStillPending();
+            } else {
+              // 15 s de vantagem para quem tem o tema compatível.
+              const timeout = setTimeout(showIfStillPending, 15000);
+              pendingTimeouts.current.push(timeout);
+            }
+          });
+        },
+        (error) => {
+          console.error(`[IncomingCall] erro no listener ${kind}:`, error);
         }
-      });
-    });
+      );
+    };
+
+    const unsubBroadcast = subscribe('broadcast');
+    const unsubDirected = subscribe('directed');
 
     return () => {
       console.log('[IncomingCall] listener cleanup');
-      unsub();
+      unsubBroadcast();
+      unsubDirected();
       pendingTimeouts.current.forEach(clearTimeout);
       pendingTimeouts.current = [];
     };

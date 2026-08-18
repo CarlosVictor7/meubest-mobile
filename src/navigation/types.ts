@@ -18,7 +18,14 @@ export type AppTabParamList = {
 // ─── Home Stack ───────────────────────────────────────────────────
 export type HomeStackParamList = {
   Home: undefined;
-  MatchSearch: { category: string };
+  MatchSearch: {
+    category: string;
+    /** Chamada direcionada criada pelo Explorar — a sessão já existe. */
+    directedSessionId?: string;
+    listenerName?: string;
+  };
+  /** Descoberta de acolhedores. Rota do HomeStack, não uma quinta aba — ver ADR-006. */
+  Explore: undefined;
   ListenerProfile: { listenerId: string };
   /**
    * `rebook` chega do "AGENDAR NOVAMENTE" no detalhe de uma sessão concluída.
