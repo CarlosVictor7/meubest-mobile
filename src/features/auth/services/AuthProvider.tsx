@@ -68,28 +68,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         console.log('[PushRegistration] Novo token detectado:', token);
 
-        // 1. Unicidade: remove este token de qualquer outro usuário no Firestore
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('pushToken', '==', token));
-        const snap = await getDocs(q);
+        // 1. Unicidade: remove este token de qualquer outro usuário no Firestore.
+        //
+        // Esta query varre /users sem filtrar por role, e as Rules publicadas só
+        // permitem `list` para admin. Para o usuário comum ela é NEGADA — e isso
+        // é esperado. A limpeza é uma otimização, não um requisito: salvar o
+        // token no usuário atual (passo 2) é o que realmente importa, e não pode
+        // ser bloqueado por uma falha aqui.
+        //
+        // Por isso o try/catch é local, e não envolve o passo 2.
+        try {
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('pushToken', '==', token));
+          const snap = await getDocs(q);
 
-        const batch = writeBatch(db);
-        let hasUpdates = false;
+          const batch = writeBatch(db);
+          let hasUpdates = false;
 
-        snap.docs.forEach((docSnap) => {
-          if (docSnap.id !== user.uid) {
-            console.log(`[PushRegistration] Removendo token duplicado do usuário: ${docSnap.id}`);
-            batch.update(docSnap.ref, {
-              pushToken: deleteField(),
-              pushTokenPlatform: deleteField(),
-              pushTokenUpdatedAt: deleteField(),
-            });
-            hasUpdates = true;
+          snap.docs.forEach((docSnap) => {
+            if (docSnap.id !== user.uid) {
+              console.log(`[PushRegistration] Removendo token duplicado do usuário: ${docSnap.id}`);
+              batch.update(docSnap.ref, {
+                pushToken: deleteField(),
+                pushTokenPlatform: deleteField(),
+                pushTokenUpdatedAt: deleteField(),
+              });
+              hasUpdates = true;
+            }
+          });
+
+          if (hasUpdates) {
+            await batch.commit();
           }
-        });
-
-        if (hasUpdates) {
-          await batch.commit();
+        } catch {
+          console.log(
+            '[PushRegistration] limpeza de token duplicado indisponivel (esperado ' +
+              'para usuario nao-admin) — seguindo para salvar o token atual'
+          );
         }
 
         // 2. Salvar token no usuário atual
