@@ -24,6 +24,7 @@ import { BottomNav, StartModal, type BottomNavTab } from '@shared/components';
 import type { AppTabParamList } from './types';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { useIncomingCall } from '@features/session/hooks/useIncomingCall';
+import { usePresence } from '@shared/hooks/usePresence';
 import { IncomingCallModal } from '@features/session/components/IncomingCallModal';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
@@ -105,6 +106,10 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 export function AppTabNavigator() {
   const { user, profile } = useAuth();
   const navigation = useNavigation<any>();
+
+  // Mantem lastSeenAt em dia enquanto o usuario estiver acolhendo e online.
+  // Montado aqui porque este navigator so existe com sessao valida e perfil completo.
+  usePresence(user?.uid, profile);
 
   const { incomingSession, dismissSession, acceptSession, isAccepting } =
     useIncomingCall(user, profile);

@@ -24,6 +24,7 @@ import { SESSION_THEMES } from '@constants/config';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserProfile } from '@models/user';
 import { getDisplayName } from '@shared/utils/displayName';
+import { canActAsListener } from '@shared/utils/listener';
 
 export interface IncomingCallSession {
   id: string;
@@ -74,8 +75,11 @@ export function useIncomingCall(
   useEffect(() => {
     // Só ativa para apoiadores (listener) online
     if (!user || !profile) return;
-    if (profile.role !== 'listener') {
-      console.log('[IncomingCall] skipped (not listener)');
+    // PREPARACAO Sprint 2: hoje o helper devolve exatamente `role === 'listener'`.
+    // Na Sprint 6 ele passa a exigir listenerStatus === 'approved' e o
+    // enforcement vale aqui sem tocar neste arquivo.
+    if (!canActAsListener(profile)) {
+      console.log('[IncomingCall] skipped (nao pode acolher)');
       return;
     }
     if (!profile.isOnline) {

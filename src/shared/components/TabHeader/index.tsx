@@ -23,11 +23,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, updateDoc, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
-import { Avatar, NoticeCard, SegmentedControl } from '@shared/components';
+import { Avatar, SegmentedControl } from '@shared/components';
+import { NoticeStrip } from '@shared/components/NoticeStrip';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
 import { EvolutionModal } from '@features/gamification/components/EvolutionModal';
 import { COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { isInListenerMode } from '@shared/utils/listener';
 import { getDisplayName, getFirstName, getInitial } from '@shared/utils/displayName';
 
 
@@ -137,7 +139,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
     return () => unsub();
   }, [user]);
 
-  const isListener = activeRole === 'listener';
+  const isListener = isInListenerMode({ role: activeRole });
 
   const name     = getFirstName(profile, 'amigo(a)');
   const initials = getInitial(profile);
@@ -156,7 +158,12 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
         await AsyncStorage.setItem(LISTENER_ONLINE_PREF_KEY, String(value));
       } catch { /* silencia — não crítico */ }
       try {
-        await updateDoc(doc(db, 'users', user.uid), { isOnline: value });
+        // lastSeenAt acompanha isOnline: ligar a chave e' tambem uma confirmacao
+        // de presenca. Ver @shared/utils/presence.
+        await updateDoc(doc(db, 'users', user.uid), {
+          isOnline: value,
+          lastSeenAt: new Date().toISOString(),
+        });
       } catch {
         setIsOnline(!value);
       }
@@ -192,6 +199,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           updateDoc(doc(db, 'users', user.uid), {
             role: 'listener',
             isOnline: preferredOnline,
+            lastSeenAt: new Date().toISOString(),
           }).catch(() => { /* silencia — UI já atualizada */ });
         }
       } else {
@@ -201,6 +209,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           updateDoc(doc(db, 'users', user.uid), {
             role: 'speaker',
             isOnline: false,
+            lastSeenAt: new Date().toISOString(),
           }).catch(() => { /* silencia — UI já atualizada */ });
         }
       }
@@ -307,13 +316,13 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
         </View>
       )}
 
-      {/* ── NoticeCard — Aviso Importante ────────────────────────── */}
-      <View style={[styles.noticeWrap, !hideControls && !isListener && styles.noticeWrapOuvir]}>
-        <NoticeCard
-          body="Somos uma rede de acolhimento formada por voluntários."
-          highlight="Não use em emergências."
-          footer="Busque ajuda profissional se necessário."
-        />
+      {/* ── Aviso de segurança — faixa compacta + modal ──────────── */}
+      {/* Era um NoticeCard de ~200px. Como o TabHeader é renderizado por Home,
+          Sessões, Menu e Carteira, o card ocupava o topo de quatro telas.
+          A mensagem não sumiu: a faixa abre um modal que diz mais do que o
+          card dizia (CVV 188 e SAMU 192 discáveis). */}
+      <View style={styles.noticeWrap}>
+        <NoticeStrip />
       </View>
 
       {/* ── Modal "Como funciona?" ───────────────────────────────── */}
@@ -509,15 +518,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // NoticeCard
+  // Faixa de aviso (NoticeStrip)
   noticeWrap: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
     backgroundColor: colors.background,
-  },
-  // Modo Ouvir: NoticeCard mais próximo do segmented (sem espaço vazio da chave)
-  noticeWrapOuvir: {
-    paddingTop: spacing.lg,
   },
   // Badge de notificações (Task 8)
   badge: {

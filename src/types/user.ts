@@ -3,6 +3,27 @@
 
 export type UserRole = 'speaker' | 'listener' | 'admin';
 
+/**
+ * Autorização para atuar como acolhedor.
+ *
+ * NÃO substitui `role`. Os dois convivem com semânticas distintas:
+ *   role           → o modo atual (o que a pessoa está fazendo agora)
+ *   listenerStatus → a autorização (o que a pessoa pode fazer)
+ *
+ * Ausência do campo equivale a `not_requested`, resolvido na leitura por
+ * `getListenerStatus()` — nenhum usuário precisa ser migrado para ser lido.
+ *
+ * ⚠️ Declarado aqui como PREPARAÇÃO. Nada lê nem escreve este campo até a
+ * Sprint 6, que traz o enforcement, as Rules e a migração de grandfathering.
+ */
+export type ListenerStatus =
+  | 'not_requested'
+  | 'training_requested'
+  | 'in_training'
+  | 'under_review'
+  | 'approved'
+  | 'rejected';
+
 export interface BankDetails {
   pix?: string;
   bankName?: string;
@@ -40,7 +61,14 @@ export interface UserProfile {
   rating?: number;
   isProfileComplete?: boolean;
   showTutorial?: boolean;
+  /** Intenção declarada pelo usuário ao virar a chave. Ver `@shared/utils/presence`. */
   isOnline?: boolean;
+  /**
+   * ISO 8601 — última vez que o app confirmou presença.
+   * `isOnline` sozinho não basta: se o sistema mata o app, ninguém desliga a
+   * chave. Consumidores descartam presença obsoleta na leitura.
+   */
+  lastSeenAt?: string;
   gratitudeCoins?: number;
   currentStreak?: number;
   lastCheckIn?: string;
@@ -76,4 +104,9 @@ export interface UserProfile {
    * Atualizada com arrayUnion no VideoRoomScreen ao bloquear durante chamada.
    */
   blockedUserIds?: string[];
+  /**
+   * Autorização para acolher. Ver `ListenerStatus`.
+   * PREPARAÇÃO — nada lê nem escreve até a Sprint 6.
+   */
+  listenerStatus?: ListenerStatus;
 }
