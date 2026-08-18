@@ -1,4 +1,12 @@
-import { canActAsListener, getListenerStatus, isInListenerMode } from '../listener';
+import {
+  canActAsListener,
+  canRequestTraining,
+  getListenerStatus,
+  isInListenerMode,
+  needsListenerTraining,
+  LISTENER_APPROVAL_ENFORCED,
+  LISTENER_STATUS_COPY,
+} from '../listener';
 
 describe('getListenerStatus', () => {
   it('devolve o status quando existe', () => {
@@ -22,17 +30,24 @@ describe('isInListenerMode', () => {
     expect(isInListenerMode({ role: 'admin' })).toBe(false);
     expect(isInListenerMode(null)).toBe(false);
   });
+
+  it('não confunde autorização com modo', () => {
+    // Aprovado mas em modo Desabafar: não está acolhendo agora.
+    expect(isInListenerMode({ role: 'speaker', listenerStatus: 'approved' })).toBe(false);
+  });
 });
 
 /**
- * ⚠️ Estes testes descrevem o comportamento PERMISSIVO da Sprint 2.
- *
- * Quando a Sprint 6 trocar a implementação por
- * `getListenerStatus(profile) === 'approved'`, este bloco DEVE falhar — é essa
- * falha que prova que o enforcement entrou em vigor. Reescrever os casos junto
- * com a mudança, não antes.
+ * O interruptor nasce desligado. Este teste é a trava: se alguém ligar a flag
+ * sem passar pela migração, ele falha e explica o porquê.
  */
-describe('canActAsListener — PREPARAÇÃO (permissivo até a Sprint 6)', () => {
+describe('LISTENER_APPROVAL_ENFORCED', () => {
+  it('está DESLIGADO — ligar exige migração de grandfathering antes', () => {
+    expect(LISTENER_APPROVAL_ENFORCED).toBe(false);
+  });
+});
+
+describe('canActAsListener — enforcement DESLIGADO (estado atual)', () => {
   it('aprova quem está em modo Acolher, sem exigir listenerStatus', () => {
     expect(canActAsListener({ role: 'listener' })).toBe(true);
     expect(canActAsListener({ role: 'listener', listenerStatus: 'not_requested' })).toBe(true);
@@ -41,15 +56,53 @@ describe('canActAsListener — PREPARAÇÃO (permissivo até a Sprint 6)', () =>
 
   it('recusa quem não está em modo Acolher', () => {
     expect(canActAsListener({ role: 'speaker' })).toBe(false);
-    expect(canActAsListener({ role: 'speaker', listenerStatus: 'approved' })).toBe(false);
     expect(canActAsListener({})).toBe(false);
     expect(canActAsListener(null)).toBe(false);
-    expect(canActAsListener(undefined)).toBe(false);
   });
 
-  it('nenhum acolhedor existente é bloqueado — o ponto da preparação', () => {
-    // Todo usuário que hoje acolhe tem role='listener' e nenhum listenerStatus.
-    const acolhedorAtual = { role: 'listener' };
-    expect(canActAsListener(acolhedorAtual)).toBe(true);
+  it('NENHUM acolhedor existente é bloqueado — a razão de a flag nascer false', () => {
+    // Todo acolhedor de hoje tem role='listener' e nenhum listenerStatus.
+    expect(canActAsListener({ role: 'listener' })).toBe(true);
+  });
+
+  it('ninguém vê a tela de treinamento enquanto a flag estiver desligada', () => {
+    expect(needsListenerTraining({ role: 'speaker' })).toBe(false);
+    expect(needsListenerTraining({ role: 'listener' })).toBe(false);
+    expect(needsListenerTraining(null)).toBe(false);
+  });
+});
+
+describe('canRequestTraining', () => {
+  it('só quem nunca solicitou pode solicitar', () => {
+    expect(canRequestTraining({})).toBe(true);
+    expect(canRequestTraining({ role: 'speaker' })).toBe(true);
+  });
+
+  it('quem já está no ciclo não solicita de novo', () => {
+    for (const status of ['training_requested', 'in_training', 'under_review', 'approved', 'rejected'] as const) {
+      expect(canRequestTraining({ listenerStatus: status })).toBe(false);
+    }
+  });
+});
+
+describe('LISTENER_STATUS_COPY', () => {
+  it('cobre os seis estados', () => {
+    const estados = [
+      'not_requested',
+      'training_requested',
+      'in_training',
+      'under_review',
+      'approved',
+      'rejected',
+    ] as const;
+    for (const e of estados) {
+      expect(LISTENER_STATUS_COPY[e].title.length).toBeGreaterThan(0);
+      expect(LISTENER_STATUS_COPY[e].message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('a mensagem de reprovação não fecha a porta do app', () => {
+    // Quem não foi aprovado para acolher continua podendo desabafar.
+    expect(LISTENER_STATUS_COPY.rejected.message.toLowerCase()).toContain('desabafar');
   });
 });

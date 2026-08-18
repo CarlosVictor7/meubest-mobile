@@ -29,7 +29,8 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
 import { EvolutionModal } from '@features/gamification/components/EvolutionModal';
 import { COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
-import { isInListenerMode } from '@shared/utils/listener';
+import { canActAsListener, isInListenerMode, needsListenerTraining } from '@shared/utils/listener';
+import { ListenerTrainingSheet } from '@features/listener/components/ListenerTrainingSheet';
 import { getDisplayName, getFirstName, getInitial } from '@shared/utils/displayName';
 
 
@@ -102,6 +103,9 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
 
   // Estado para o modal de Evolução (Task 11)
   const [evolutionVisible, setEvolutionVisible] = useState(false);
+
+  // Tela explicativa de treinamento. So alcancavel com o enforcement ligado.
+  const [trainingOpen, setTrainingOpen] = useState(false);
 
   // Sincroniza quando o profile do Firestore chegar
   useEffect(() => {
@@ -177,6 +181,18 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
   const handleRoleChange = useCallback(
     async (newRole: string) => {
       if (newRole === activeRole) return;
+
+      // ── Gate de acolhimento (Sprint 6) ───────────────────────────────────
+      // Tocar em "Acolher" sem autorização NÃO troca o papel: abre a tela que
+      // explica a seleção e oferece o treinamento. Com
+      // LISTENER_APPROVAL_ENFORCED = false, `needsListenerTraining` devolve
+      // sempre false e este bloco é inerte — nada muda para ninguém.
+      if (newRole === 'listener' && needsListenerTraining(profile)) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setTrainingOpen(true);
+        return;
+      }
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setActiveRole(newRole);
       onRoleChange?.(newRole);
@@ -214,7 +230,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
         }
       }
     },
-    [activeRole, user, onRoleChange]
+    [activeRole, user, onRoleChange, profile]
   );
 
 
@@ -283,7 +299,7 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           />
 
           {/* Bloco da chave Online — só em modo Apoiar */}
-          {isListener && (
+          {isListener && canActAsListener(profile) && (
             <View style={styles.onlineBlock}>
               <View style={styles.onlineRow}>
                 <Switch
@@ -324,6 +340,14 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
       <View style={styles.noticeWrap}>
         <NoticeStrip />
       </View>
+
+      {/* Tela de treinamento — inerte enquanto o enforcement estiver desligado */}
+      <ListenerTrainingSheet
+        visible={trainingOpen}
+        onClose={() => setTrainingOpen(false)}
+        uid={user?.uid}
+        profile={profile}
+      />
 
       {/* ── Modal "Como funciona?" ───────────────────────────────── */}
       <Modal

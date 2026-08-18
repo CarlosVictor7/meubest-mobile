@@ -54,7 +54,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { getWalletSummary } from '@shared/services/paymentService';
 import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getFirstName, getInitial } from '@shared/utils/displayName';
-import { isInListenerMode } from '@shared/utils/listener';
+import { canActAsListener, isInListenerMode } from '@shared/utils/listener';
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming } from '@features/session/utils/sessionFilters';
 import { canJoinSession, isUpcomingSession } from '@features/session/utils/sessionWindow';
@@ -261,7 +261,10 @@ export function HomeScreen() {
               - Listener: BlackCard Disponibilidade (como antes)
               - Speaker: Início Rápido + Agendar Momento
           ═══════════════════════════════════════════════ */}
-          {isListener ? (
+          {/* Disponibilidade so para quem pode acolher. Com o enforcement
+              desligado, canActAsListener devolve `role === 'listener'` e o
+              comportamento e identico ao de sempre. */}
+          {isListener && canActAsListener(profile) ? (
             <BlackCard
               icon={<Calendar size={34} color={colors.textInverted} strokeWidth={1.8} />}
               label="Acolhedor"

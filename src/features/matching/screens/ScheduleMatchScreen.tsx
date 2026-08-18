@@ -38,6 +38,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { SESSION_THEMES } from '@constants/config';
 import { getDisplayName, getInitial } from '@shared/utils/displayName';
+import { canActAsListener } from '@shared/utils/listener';
 
 const { width, height } = Dimensions.get('window');
 
@@ -145,6 +146,11 @@ export function ScheduleMatchScreen() {
     return volunteers.filter(v => {
       // 1. Ocultar voluntários que EU bloqueei
       if (myBlockedIds.includes(v.id)) return false;
+
+      // 2. So quem pode acolher. Mesmo helper do Explorar e do useIncomingCall:
+      //    quando a Sprint 6 ligar o enforcement, os tres passam a exigir
+      //    listenerStatus === 'approved' de uma vez.
+      if (!canActAsListener(v)) return false;
 
       // Nota: voluntários que ME bloquearam não podem ser filtrados aqui sem
       // ler o doc de cada voluntário (requereria rules ou query extra).
