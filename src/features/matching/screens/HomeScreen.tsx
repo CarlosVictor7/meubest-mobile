@@ -6,7 +6,7 @@
  * 1. Header — avatar (inicial), saudação, moedas/streak, sino
  * 2. SegmentedControl — Ouvir / Apoiar
  * 3. Toggle Online (apenas listener)
- * 4. NoticeCard — Aviso Importante
+ * 4. NoticeStrip — Aviso Importante (compacto, no TabHeader)
  * 5. BlackCard — Disponibilidade (listener) ou Progresso (speaker)
  * 6. Stats Row — Sessões, Avaliação, Gorjeta/Saldo
  * 7. Sessões Card — próximas e recentes
@@ -32,7 +32,6 @@ import {
   Bell,
   Flame,
   Coins,
-  History,
   Star,
   CreditCard,
   Calendar,
@@ -48,12 +47,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '@navigation/types';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
-import { Avatar, BlackCard, NoticeCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD, StartModal } from '@shared/components';
+import { Avatar, BlackCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD, StartModal } from '@shared/components';
 import { TabHeader } from '@shared/components/TabHeader';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { getWalletSummary } from '@shared/services/paymentService';
 import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getFirstName, getInitial } from '@shared/utils/displayName';
+import { isInListenerMode } from '@shared/utils/listener';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
@@ -98,7 +98,7 @@ export function HomeScreen() {
   const [isSavingThemes, setIsSavingThemes] = useState(false);
 
 
-  const isListener = profile?.role === 'listener';
+  const isListener = isInListenerMode(profile);
   const name = getFirstName(profile, 'amigo(a)');
   const initials = getInitial(profile);
   const coins = profile?.gratitudeCoins ?? 0;
@@ -151,17 +151,25 @@ export function HomeScreen() {
     return () => unsub();
   }, [user, profile?.role]);
 
-  // ── Toggle Online ─────────────────────────────────────────────────
-  // Mantido para referência local — lógica principal centralizada no TabHeader
-  const toggleOnlineStatus = async (value: boolean) => {
+  // ── Disponibilidade ───────────────────────────────────────────────
+  // O card MINHA DISPONIBILIDADE tinha `onAction={() => {}}` — botão morto.
+  // Agora ele controla a MESMA chave do TabHeader: um único estado no
+  // Firestore, refletido nos dois lugares pelo snapshot do perfil.
+  const toggleOnlineStatus = useCallback(async (value: boolean) => {
     if (!user) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsOnline(value);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { isOnline: value });
-    } catch {
+      await updateDoc(doc(db, 'users', user.uid), {
+        isOnline: value,
+        lastSeenAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('[HomeScreen] Falha ao alterar disponibilidade:', error);
       setIsOnline(!value);
+      Alert.alert('Erro', 'Não foi possível alterar sua disponibilidade. Tente novamente.');
     }
-  };
+  }, [user]);
 
   // ── Temas de Apoio (Task 10) ──────────────────────────────────────
   const handleToggleTheme = useCallback((themeId: string) => {
@@ -258,66 +266,55 @@ export function HomeScreen() {
           {isListener ? (
             <BlackCard
               icon={<Calendar size={34} color={colors.textInverted} strokeWidth={1.8} />}
-              label="Listener"
+              label="Acolhedor"
               title="Minha Disponibilidade"
-              subtitle="Defina os dias e horários que você pode apoiar outras pessoas."
-              actionLabel="Gerenciar"
-              actionIcon={<Text style={{ fontSize: 14 }}>⚙️</Text>}
-              onAction={() => {}}
+              subtitle={
+                isOnline
+                  ? 'Você está disponível agora. Pode receber um chamado a qualquer momento.'
+                  : 'Você está indisponível. Ative quando puder acolher alguém.'
+              }
+              actionLabel={isOnline ? 'Ficar indisponível' : 'Ficar disponível'}
+              actionIcon={<Text style={{ fontSize: 14 }}>{isOnline ? '🟢' : '⚪'}</Text>}
+              onAction={() => toggleOnlineStatus(!isOnline)}
             />
           ) : (
-            // Modo Ouvir: Início Rápido + Agendar Momento
-            <View style={styles.speakerCards}>
+            // Modo Desabafar: grade 2x2 de ações
+            // Sem width fixa e sem Dimensions: cada célula é `flex: 1` dentro de
+            // uma linha `row`. É isso que faz a grade sobreviver em tela pequena.
+            <View style={styles.actionGrid}>
 
-              {/* ─── Card Início Rápido ─────────────────────────────── */}
-              <TouchableOpacity
-                style={[styles.quickStartCard, shadows.sm]}
-                onPress={() => setStartModalVisible(true)}
-                activeOpacity={0.88}
-              >
-                <View style={styles.quickStartBgBlob} />
-                <View style={styles.quickStartIconWrap}>
-                  <Flame size={26} color={colors.primary} strokeWidth={1.8} />
-                </View>
-                <View style={styles.quickStartContent}>
-                  <Text style={styles.quickStartTitle}>INÍCIO RÁPIDO</Text>
-                  <Text style={styles.quickStartSubtitle}>
-                    Precisa desabafar agora? Escolha um tema e comece.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.quickStartBtn}
+              {/* Linha 1 */}
+              <View style={styles.actionRow}>
+                <ActionTile
+                  icon={<Flame size={24} color={colors.primary} strokeWidth={2} />}
+                  title={'INÍCIO\nRÁPIDO'}
+                  hint="Desabafar agora"
                   onPress={() => setStartModalVisible(true)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.quickStartBtnText}>DESABAFAR AGORA →</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-
-              {/* ─── Card Agendar Momento ───────────────────────────── */}
-              <TouchableOpacity
-                style={[styles.scheduleCard, shadows.sm]}
-                onPress={() => navigation.navigate('ScheduleMatch', {})}
-                activeOpacity={0.88}
-              >
-                <View style={styles.scheduleBgBlob} />
-                <View style={styles.scheduleIconWrap}>
-                  <Calendar size={26} color={colors.textInverted} strokeWidth={1.8} />
-                </View>
-                <View style={styles.scheduleContent}>
-                  <Text style={styles.scheduleTitle}>AGENDAR MOMENTO</Text>
-                  <Text style={styles.scheduleSubtitle}>
-                    Prefere marcar um horário? Escolha quem você quer ouvir.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.scheduleBtn}
+                />
+                <ActionTile
+                  icon={<Calendar size={24} color={colors.textInverted} strokeWidth={2} />}
+                  title={'AGENDAR\nMOMENTO'}
+                  hint="Marcar horário"
+                  dark
                   onPress={() => navigation.navigate('ScheduleMatch', {})}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.scheduleBtnText}>AGENDAR →</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
+                />
+              </View>
+
+              {/* Linha 2 */}
+              <View style={styles.actionRow}>
+                <ActionTile
+                  icon={<Calendar size={24} color={colors.primary} strokeWidth={2} />}
+                  title={'SESSÕES'}
+                  hint={sessionCount > 0 ? `${sessionCount} no histórico` : 'Ver histórico'}
+                  onPress={() => (navigation as any).navigate('SessionsTab')}
+                />
+                <ActionTile
+                  icon={<Star size={24} color={colors.primary} strokeWidth={2} />}
+                  title={'AVALIAÇÃO'}
+                  hint={`${rating} de 5,0`}
+                  onPress={() => (navigation as any).navigate('ProfileTab')}
+                />
+              </View>
 
             </View>
           )}
@@ -336,18 +333,10 @@ export function HomeScreen() {
           {/* ═══════════════════════════════════════════════════════
               5. STATS — lista vertical
           ═══════════════════════════════════════════════════════ */}
+          {/* Sessões e Avaliação sairam daqui: a grade 2x2 acima ja mostra os dois,
+              e ter o mesmo numero duas vezes na mesma tela so ocupa altura.
+              O card de saldo fica — e financeiro e nao tem lugar na grade. */}
           <View style={styles.statsCol}>
-            <StatsCard
-              label="Sessões"
-              value={String(sessionCount)}
-              icon={<History size={20} color={colors.primary} strokeWidth={2} />}
-              onPress={() => (navigation as any).navigate('SessionsTab')}
-            />
-            <StatsCard
-              label="Avaliação"
-              value={rating}
-              icon={<Star size={20} color={colors.primary} strokeWidth={2} />}
-            />
             {/* StatsCard de saldo apenas no Android (iOS compliance Guideline 1.1.4) */}
             {FINANCIAL_FEATURES_ENABLED && (
               <StatsCard
@@ -550,6 +539,96 @@ export function HomeScreen() {
 }
 
 // ─── SessionRow ─────────────────────────────────────────────────────
+/**
+ * ActionTile — célula da grade 2x2 da Home.
+ *
+ * Uma única forma para as quatro ações. Antes eram dois cards grandes
+ * empilhados, com estilos próprios cada um, e não havia lugar para Sessões
+ * e Avaliação sem esticar a tela.
+ */
+function ActionTile({
+  icon,
+  title,
+  hint,
+  onPress,
+  dark,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  hint: string;
+  onPress: () => void;
+  dark?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[tile.card, dark && tile.cardDark, shadows.sm]}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`${title.replace('\n', ' ')} — ${hint}`}
+    >
+      <View style={[tile.iconWrap, dark && tile.iconWrapDark]}>{icon}</View>
+      <Text style={[tile.title, dark && tile.titleDark]}>{title}</Text>
+      <Text style={[tile.hint, dark && tile.hintDark]} numberOfLines={1}>
+        {hint}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+const tile = StyleSheet.create({
+  card: {
+    // `flex: 1` é o que mantém a grade responsiva: as duas células dividem a
+    // linha em partes iguais, seja qual for a largura da tela.
+    flex: 1,
+    minHeight: 132,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    padding: spacing.md,
+    justifyContent: 'space-between',
+  },
+  cardDark: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: borderRadius.md,
+    backgroundColor: `${colors.primary}14`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapDark: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  title: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.3,
+    lineHeight: 17,
+    marginTop: spacing.sm,
+  },
+  titleDark: {
+    color: colors.textInverted,
+  },
+  hint: {
+    fontSize: 11,
+    fontWeight: typography.weight.medium,
+    color: colors.textMutedValue,
+    marginTop: 2,
+  },
+  hintDark: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+});
+
 function SessionRow({ session, isRecent, onPress }: { session: any; isRecent?: boolean; onPress?: () => void }) {
   const dateStr = session.selectedTime
     ? new Date(session.selectedTime).toLocaleDateString('pt-BR', {
@@ -820,118 +899,17 @@ const styles = StyleSheet.create({
   },
 
   // ─── Cards de Ação — Modo Ouvir ─────────────────────────────────
-  speakerCards: {
+  actionGrid: {
+    gap: spacing.md,
+  },
+  actionRow: {
+    flexDirection: 'row',
     gap: spacing.md,
   },
 
-  // Card Início Rápido (light, borda primária)
-  quickStartCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    overflow: 'hidden',
-  },
-  quickStartBgBlob: {
-    position: 'absolute',
-    top: -24,
-    right: -24,
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: `${colors.primary}12`,
-  },
-  quickStartIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   quickStartContent: { gap: 4 },
-  quickStartTitle: {
-    fontSize: typography.size.lg,
-    fontWeight: typography.weight.black,
-    color: colors.primary,
-    letterSpacing: typography.tracking.tight,
-  },
-  quickStartSubtitle: {
-    fontSize: typography.size.sm,
-    color: colors.textMutedValue,
-    fontWeight: typography.weight.medium,
-    lineHeight: 18,
-  },
-  quickStartBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.full,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.lg,
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs,
-    ...shadows.primary,
-  },
-  quickStartBtnText: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.black,
-    color: colors.textInverted,
-    letterSpacing: typography.tracking.wider,
-  },
 
-  // Card Agendar Momento (dark)
-  scheduleCard: {
-    backgroundColor: colors.dark ?? '#1A1A1A',
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    overflow: 'hidden',
-  },
-  scheduleBgBlob: {
-    position: 'absolute',
-    top: -24,
-    right: -24,
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  scheduleIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   scheduleContent: { gap: 4 },
-  scheduleTitle: {
-    fontSize: typography.size.lg,
-    fontWeight: typography.weight.black,
-    color: colors.textInverted,
-    letterSpacing: typography.tracking.tight,
-  },
-  scheduleSubtitle: {
-    fontSize: typography.size.sm,
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: typography.weight.medium,
-    lineHeight: 18,
-  },
-  scheduleBtn: {
-    backgroundColor: colors.textInverted,
-    borderRadius: borderRadius.full,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.lg,
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs,
-  },
-  scheduleBtnText: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.black,
-    color: colors.dark ?? '#1A1A1A',
-    letterSpacing: typography.tracking.wider,
-  },
 
   // ── Temas que você apoia Card (Task 10) ──
   themesCard: {
