@@ -31,6 +31,7 @@ import { TabHeader } from '@shared/components/TabHeader';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { getDisplayName, BIO_MAX_LENGTH, PREFERRED_NAME_MAX_LENGTH } from '@shared/utils/displayName';
 
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
@@ -53,7 +54,9 @@ export function ProfileScreen() {
 
 
   // Estados locais para edição
-  const [displayName, setDisplayName] = useState('');
+  // `preferredName` é o nome PÚBLICO editável. O `name` do provider nunca é tocado aqui.
+  const [preferredName, setPreferredName] = useState('');
+  const [bio, setBio] = useState('');
   const [pixKey, setPixKey] = useState('');
   const [bankName, setBankName] = useState('');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
@@ -64,7 +67,9 @@ export function ProfileScreen() {
   // Inicializa dados do usuário a partir do Firestore
   useEffect(() => {
     if (profile) {
-      setDisplayName(profile.name || user?.displayName || 'Amigo(a)');
+      // Pré-preenche com o nome público atual: preferredName, ou name como fallback.
+      setPreferredName(getDisplayName(profile, ''));
+      setBio(profile.bio || '');
       setPixKey(profile.bankDetails?.pix || '');
       setBankName(profile.bankDetails?.bankName || '');
       
@@ -76,7 +81,7 @@ export function ProfileScreen() {
         setEmailNotifications((profile as any).emailNotifications);
       }
     } else if (user) {
-      setDisplayName(user.displayName || 'Amigo(a)');
+      setPreferredName(user.displayName || '');
     }
   }, [profile, user]);
 
@@ -96,8 +101,13 @@ export function ProfileScreen() {
 
   const handleSave = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (!displayName.trim()) {
-      Alert.alert('Atenção', 'O nome de exibição não pode estar vazio.');
+    if (!preferredName.trim()) {
+      Alert.alert('Atenção', 'O nome não pode estar vazio.');
+      return;
+    }
+
+    if (bio.length > BIO_MAX_LENGTH) {
+      Alert.alert('Atenção', `O texto "Sobre você" pode ter no máximo ${BIO_MAX_LENGTH} caracteres.`);
       return;
     }
     
@@ -111,7 +121,10 @@ export function ProfileScreen() {
       // No iOS, não salvar bankDetails para não sobrescrever dados válidos
       // que o usuário possa ter inserido no Android (campo não exibido no iOS).
       const updatePayload: Record<string, any> = {
-        name: displayName.trim(),
+        // `name` fica FORA do payload de propósito: ele pertence ao provider
+        // (Google/Apple) e nenhuma tela de perfil pode sobrescrevê-lo. Ver ADR-003.
+        preferredName: preferredName.trim(),
+        bio: bio.trim() || null,
         interests: selectedTopics,
         emailNotifications,
       };
@@ -240,14 +253,40 @@ export function ProfileScreen() {
               </View>
 
               <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>NOME DE EXIBIÇÃO</Text>
+                <Text style={styles.fieldLabel}>COMO VOCÊ QUER SER CHAMADO?</Text>
                 <TextInput
                   style={styles.input}
-                  value={displayName}
-                  onChangeText={setDisplayName}
-                  placeholder="Seu nome"
+                  value={preferredName}
+                  onChangeText={setPreferredName}
+                  placeholder="Ex.: Ana"
                   placeholderTextColor={colors.textMutedValue}
+                  maxLength={PREFERRED_NAME_MAX_LENGTH}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  accessibilityLabel="Como você quer ser chamado"
                 />
+                <Text style={styles.fieldHint}>
+                  É assim que as outras pessoas vão te ver no app.
+                </Text>
+              </View>
+
+              <View style={styles.fieldWrap}>
+                <Text style={styles.fieldLabel}>SOBRE VOCÊ (OPCIONAL)</Text>
+                <TextInput
+                  style={styles.textArea}
+                  value={bio}
+                  onChangeText={setBio}
+                  placeholder="Conte um pouco sobre você, seus interesses ou o que gostaria que outras pessoas soubessem."
+                  placeholderTextColor={colors.textMutedValue}
+                  maxLength={BIO_MAX_LENGTH}
+                  multiline
+                  textAlignVertical="top"
+                  autoCapitalize="sentences"
+                  accessibilityLabel="Sobre você"
+                />
+                <Text style={styles.charCounter}>
+                  {bio.length}/{BIO_MAX_LENGTH}
+                </Text>
               </View>
 
               <View style={styles.fieldWrap}>
@@ -482,6 +521,35 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     fontWeight: typography.weight.medium,
     color: colors.text,
+  },
+  textArea: {
+    minHeight: 110,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  fieldHint: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    marginLeft: 4,
+    marginTop: 2,
+  },
+  charCounter: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    textAlign: 'right',
+    marginRight: 4,
+    marginTop: 2,
   },
   inputDisabled: {
     backgroundColor: 'rgba(253, 246, 240, 0.5)', // creme com opacidade
