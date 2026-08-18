@@ -32,7 +32,7 @@ module.exports = {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#FDF8F5',
     },
-    package: IS_DEV ? 'meu.best.dev' : 'meu.best',
+    package: IS_DEV ? 'br.com.meubest.app.dev' : 'meu.best',
     versionCode: 5,
     googleServicesFile: './google-services.json',
     permissions: [
