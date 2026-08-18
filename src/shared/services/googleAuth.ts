@@ -113,6 +113,23 @@ export async function signInWithGoogle(
       return { type: 'cancelled' };
     }
 
+    // Firestore inalcançável. Aqui o login no Auth JÁ funcionou — o que falhou
+    // foi ler o perfil. Falhar é deliberado: sem saber se o documento existe,
+    // seguir em frente e criar um novo sobrescreveria pontos, nível, moedas e
+    // saldo de quem já tem conta. Perder o login é recuperável; perder o
+    // histórico da pessoa não é.
+    const offline =
+      error?.code === 'unavailable' ||
+      /client is offline|Could not reach Cloud Firestore/i.test(error?.message ?? '');
+
+    if (offline) {
+      return {
+        type: 'error',
+        message:
+          'Não conseguimos falar com o servidor agora. Confira sua conexão e tente de novo em instantes.',
+      };
+    }
+
     return {
       type: 'error',
       message: error?.message ?? 'Erro ao autenticar com o Google.',
