@@ -18,7 +18,10 @@
  * nenhum write no Firestore.
  */
 import * as ImagePicker from 'expo-image-picker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+// expo-image-manipulator é importado DINAMICAMENTE dentro de
+// processProfileImage: é módulo NATIVO novo (19/08) e um import estático
+// derrubaria o app inteiro em dev clients antigos que ainda não o embarcam.
+// Com o import tardio, só o fluxo de foto degrada (com mensagem amigável).
 import { deleteField, doc, updateDoc } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from './firebase';
@@ -97,6 +100,7 @@ export async function processProfileImage(
   size?: { width?: number; height?: number }
 ): Promise<string> {
   try {
+    const { ImageManipulator, SaveFormat } = await import('expo-image-manipulator');
     const context = ImageManipulator.manipulate(uri);
 
     const width = size?.width ?? 0;
