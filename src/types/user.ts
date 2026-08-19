@@ -80,6 +80,13 @@ export interface UserProfile {
   referralCode?: string;
   rewardBalance?: number;
   availability?: { [date: string]: string[] };
+  /**
+   * Fuso IANA (ex.: "America/Sao_Paulo") capturado no MESMO write que salva a
+   * agenda — nunca em heartbeat. A API usa isto para interpretar `availability`
+   * no relógio do usuário; perfis antigos sem o campo caem no fallback
+   * America/Sao_Paulo do lado do servidor.
+   */
+  availabilityTimezone?: string;
   bankDetails?: BankDetails;
   photoURL?: string;
   createdAt?: string;
