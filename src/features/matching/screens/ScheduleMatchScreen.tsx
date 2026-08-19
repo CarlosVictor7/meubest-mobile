@@ -39,6 +39,9 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { SESSION_THEMES } from '@constants/config';
 import { getDisplayName, getInitial } from '@shared/utils/displayName';
 import { canActAsListener } from '@shared/utils/listener';
+import { localDateKey } from '@shared/utils/availability';
+import { DayStrip } from '../components/DayStrip';
+import { TimeGrid } from '../components/TimeGrid';
 
 const { width, height } = Dimensions.get('window');
 
@@ -598,54 +601,30 @@ export function ScheduleMatchScreen() {
                 <CalendarIcon size={14} color={colors.primary} /> ESCOLHA UMA DATA E HORÁRIO
               </Text>
               
-              {/* Calendário horizontal de Dias */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.calendarContainer}>
-                {nextDays.map((date, idx) => {
-                  const isDateSelected = selectedDateObj?.toDateString() === date.toDateString();
-                  const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase();
-                  const dayNum = date.getDate();
-
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={[styles.calendarDay, isDateSelected && styles.calendarDayActive]}
-                      onPress={() => {
-                        setSelectedDateObj(date);
-                        setSelectedTimeStr(null); // Reseta hora ao mudar dia
-                      }}
-                    >
-                      <Text style={[styles.calendarWeekday, isDateSelected && styles.calendarWeekdayActive]}>
-                        {weekday}
-                      </Text>
-                      <Text style={[styles.calendarDayNum, isDateSelected && styles.calendarDayNumActive]}>
-                        {dayNum}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+              {/* Calendário horizontal de Dias — componente compartilhado com
+                  o modal de disponibilidade. Seleção por chave local, nunca
+                  por identidade de Date. */}
+              <DayStrip
+                days={nextDays}
+                selectedKey={selectedDateObj ? localDateKey(selectedDateObj) : null}
+                onSelect={(date) => {
+                  setSelectedDateObj(date);
+                  setSelectedTimeStr(null); // Reseta hora ao mudar dia
+                }}
+              />
             </View>
 
-            {/* Seleção de Horários */}
+            {/* Seleção de Horários — aqui a seleção é ÚNICA: o Set espelha o
+                selectedTimeStr e o toggle substitui em vez de acumular. */}
             {selectedDateObj && (
               <View style={styles.formGroup}>
-                <View style={styles.timesGrid}>
-                  {DEFAULT_TIMES.map(time => {
-                    const isTimeSelected = selectedTimeStr === time;
-                    return (
-                      <TouchableOpacity
-                        key={time}
-                        style={[styles.timeChip, isTimeSelected && styles.timeChipActive]}
-                        onPress={() => setSelectedTimeStr(time)}
-                      >
-                        <Clock size={12} color={isTimeSelected ? colors.textInverted : colors.primary} />
-                        <Text style={[styles.timeChipText, isTimeSelected && styles.timeChipTextActive]}>
-                          {time}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                <TimeGrid
+                  times={DEFAULT_TIMES}
+                  selected={selectedTimeStr ? new Set([selectedTimeStr]) : new Set()}
+                  onToggle={(time) =>
+                    setSelectedTimeStr((prev) => (prev === time ? null : time))
+                  }
+                />
               </View>
             )}
 
@@ -1155,73 +1134,8 @@ const styles = StyleSheet.create({
   },
 
   // Calendário horizontal
-  calendarContainer: {
-    gap: spacing.xs,
-    paddingVertical: 2,
-  },
-  calendarDay: {
-    width: 68,
-    height: 76,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 2,
-    borderColor: colors.primaryLight,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 4,
-  },
-  calendarDayActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  calendarWeekday: {
-    fontSize: 9,
-    fontWeight: typography.weight.black,
-    color: colors.textMutedValue,
-  },
-  calendarWeekdayActive: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  calendarDayNum: {
-    fontSize: typography.size.xl,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-  },
-  calendarDayNumActive: {
-    color: colors.textInverted,
-  },
 
   // Grid de Horários
-  timesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  timeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.primaryLight,
-    borderRadius: borderRadius.sm,
-    width: '31%', // 3 chips por linha
-    paddingVertical: 10,
-    gap: 6,
-  },
-  timeChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  timeChipText: {
-    fontSize: typography.size.xs,
-    fontWeight: typography.weight.bold,
-    color: colors.primary,
-  },
-  timeChipTextActive: {
-    color: colors.textInverted,
-  },
 
   // Confirmação e Envio
   confirmSection: {

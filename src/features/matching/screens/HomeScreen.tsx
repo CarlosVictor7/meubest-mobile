@@ -55,6 +55,8 @@ import { getWalletSummary } from '@shared/services/paymentService';
 import { FINANCIAL_FEATURES_ENABLED, COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getFirstName, getInitial } from '@shared/utils/displayName';
 import { canActAsListener, isInListenerMode } from '@shared/utils/listener';
+import { countUpcomingSlots } from '@shared/utils/availability';
+import { AvailabilityModal } from '../components/AvailabilityModal';
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming } from '@features/session/utils/sessionFilters';
 import { canJoinSession, isUpcomingSession } from '@features/session/utils/sessionWindow';
@@ -147,24 +149,12 @@ export function HomeScreen() {
   }, [navigation]);
 
   // ── Disponibilidade ───────────────────────────────────────────────
-  // O card MINHA DISPONIBILIDADE tinha `onAction={() => {}}` — botão morto.
-  // Agora ele controla a MESMA chave do TabHeader: um único estado no
-  // Firestore, refletido nos dois lugares pelo snapshot do perfil.
-  const toggleOnlineStatus = useCallback(async (value: boolean) => {
-    if (!user) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsOnline(value);
-    try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        isOnline: value,
-        lastSeenAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error('[HomeScreen] Falha ao alterar disponibilidade:', error);
-      setIsOnline(!value);
-      Alert.alert('Erro', 'Não foi possível alterar sua disponibilidade. Tente novamente.');
-    }
-  }, [user]);
+  // O card MINHA DISPONIBILIDADE deixou de ser um toggle disfarçado de agenda:
+  // agora abre o modal de disponibilidade PROGRAMADA (mesmo schema da web).
+  // A presença ao vivo continua na chave ONLINE do TabHeader — são dois
+  // conceitos distintos e os dois aparecem no subtítulo do card.
+  const [availabilityModalVisible, setAvailabilityModalVisible] = useState(false);
+  const upcomingSlots = countUpcomingSlots(profile?.availability);
 
   // ── Temas de Apoio (Task 10) ──────────────────────────────────────
   const handleToggleTheme = useCallback((themeId: string) => {
@@ -252,7 +242,7 @@ export function HomeScreen() {
         {/* ═══════════════════════════════════════════════════════════
             1-3. HEADER PADRÃO (avatar, segmented, online, notice)
         ═══════════════════════════════════════════════════════════ */}
-        <TabHeader />
+        <TabHeader showNotice />
 
         <View style={styles.content}>
 
@@ -270,13 +260,19 @@ export function HomeScreen() {
               label="Acolhedor"
               title="Minha Disponibilidade"
               subtitle={
-                isOnline
-                  ? 'Você está disponível agora. Pode receber um chamado a qualquer momento.'
-                  : 'Você está indisponível. Ative quando puder acolher alguém.'
+                (isOnline
+                  ? 'Você está disponível agora.'
+                  : 'Você está indisponível agora.') +
+                (upcomingSlots > 0
+                  ? ` ${upcomingSlots} horário${upcomingSlots > 1 ? 's' : ''} agendado${upcomingSlots > 1 ? 's' : ''} nos próximos dias.`
+                  : ' Programe horários para receber chamados mesmo com o app fechado.')
               }
-              actionLabel={isOnline ? 'Ficar indisponível' : 'Ficar disponível'}
-              actionIcon={<Text style={{ fontSize: 14 }}>{isOnline ? '🟢' : '⚪'}</Text>}
-              onAction={() => toggleOnlineStatus(!isOnline)}
+              actionLabel="Gerenciar disponibilidade"
+              actionIcon={<Text style={{ fontSize: 14 }}>🗓️</Text>}
+              onAction={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setAvailabilityModalVisible(true);
+              }}
             />
           ) : (
             // Modo Desabafar: grade 2x2 de ações
@@ -356,6 +352,16 @@ export function HomeScreen() {
               setStartModalVisible(false);
               navigation.navigate('MatchSearch', { category: theme });
             }}
+          />
+
+          {/* Modal de disponibilidade programada — abre pelo card do acolhedor.
+              A agenda já está no profile (mesma leitura de sempre): abrir o
+              modal custa ZERO reads, e só o CONCLUÍDO escreve. */}
+          <AvailabilityModal
+            visible={availabilityModalVisible}
+            onClose={() => setAvailabilityModalVisible(false)}
+            uid={user?.uid}
+            availability={profile?.availability}
           />
 
 

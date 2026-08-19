@@ -160,8 +160,15 @@ export function ProfileScreen() {
           onPress: async () => {
             try {
               await logout();
-            } catch (error) {
-              Alert.alert('Erro', 'Não foi possível sair da conta.');
+            } catch (error: any) {
+              // LogoutCleanupError traz a explicação real (limpeza de push/presença
+              // não confirmada no servidor). Sem mensagem específica, cai no genérico.
+              Alert.alert(
+                'Erro',
+                error?.name === 'LogoutCleanupError' && error?.message
+                  ? error.message
+                  : 'Não foi possível sair da conta.'
+              );
             }
           }
         },
@@ -239,7 +246,9 @@ export function ProfileScreen() {
         bounces
       >
         {/* Cabeçalho global */}
-        <TabHeader />
+        {/* Menu é Configurações/Perfil: sem Desabafar|Acolher, sem chave,
+            sem "Vire a chave aqui" e sem aviso — tudo isso pertence à Home. */}
+        <TabHeader hideControls />
 
         <View style={styles.padded}>
           {/* Card Principal de Formulário */}
@@ -470,7 +479,15 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flexGrow: 1 },
-  padded: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+  // `gap` separa os cards irmãos (PERFIL PESSOAL e SUPORTE E SEGURANÇA) —
+  // sem ele os dois se tocavam. Folga inferior para o card respirar antes
+  // do BottomNav flutuante.
+  padded: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.xl,
+  },
 
   // Card principal
   mainCard: {

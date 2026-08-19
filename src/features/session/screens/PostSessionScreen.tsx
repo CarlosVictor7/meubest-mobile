@@ -9,9 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
+// SafeAreaView do react-native é NO-OP no Android — com edgeToEdge, o header
+// ficava sob a status bar. Mesmo defeito já corrigido em SessionDetailScreen.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Star } from 'lucide-react-native';
 import { collection, addDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -141,7 +143,7 @@ export function PostSessionScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}

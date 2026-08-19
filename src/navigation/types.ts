@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 
 // ─── Auth Stack ───────────────────────────────────────────────────
 export type AuthStackParamList = {
@@ -8,9 +9,11 @@ export type AuthStackParamList = {
 };
 
 // ─── App Tabs ─────────────────────────────────────────────────────
+// Os params aninhados existem para a navegação por notificação poder
+// apontar uma tela dentro de uma aba (ex.: SessionsTab → SessionDetail).
 export type AppTabParamList = {
-  HomeTab: undefined;
-  SessionsTab: undefined;
+  HomeTab: NavigatorScreenParams<HomeStackParamList> | undefined;
+  SessionsTab: NavigatorScreenParams<SessionsStackParamList> | undefined;
   WalletTab: undefined;
   ProfileTab: undefined;
 };
@@ -84,7 +87,7 @@ export type RootStackParamList = {
   Auth: undefined;
   ProfileForm: undefined;
   ProfileError: undefined;  // Tela de erro quando Firestore falha transitoriamente
-  App: undefined;
+  App: NavigatorScreenParams<AppTabParamList> | undefined;
   Session: { sessionId: string }; // Modal
 };
 

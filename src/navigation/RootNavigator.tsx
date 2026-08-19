@@ -1,5 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import {
+  navigationRef,
+  setNotificationNavigationReady,
+} from './notificationNavigation';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   ActivityIndicator,
@@ -134,8 +138,21 @@ export function RootNavigator() {
   const waitingProfile = isAuthenticated && !profile && !profileError;
   const showBootstrap = !isReady || waitingProfile;
 
+  // A árvore autenticada está montada e pronta para receber a navegação de uma
+  // notificação tocada? Só com sessão válida E perfil completo — uma push
+  // pendente nunca navega antes do bootstrap nem para uma conta deslogada.
+  const appTreeMounted =
+    !showBootstrap && isAuthenticated && !profileError && profile?.isProfileComplete === true;
+
+  useEffect(() => {
+    setNotificationNavigationReady(appTreeMounted);
+  }, [appTreeMounted]);
+
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => setNotificationNavigationReady(appTreeMounted)}
+    >
       <Root.Navigator screenOptions={{ headerShown: false }}>
         {showBootstrap ? (
           // Ainda decidindo — nenhum navigator de conteúdo é montado.
