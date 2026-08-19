@@ -1,4 +1,5 @@
 import {
+  buildTrainingRequestPatch,
   canActAsListener,
   canRequestTraining,
   getListenerStatus,
@@ -38,37 +39,43 @@ describe('isInListenerMode', () => {
 });
 
 /**
- * O interruptor nasce desligado. Este teste é a trava: se alguém ligar a flag
- * sem passar pela migração, ele falha e explica o porquê.
+ * A trava mudou de lado em 19/08/2026: a flag foi LIGADA depois de cumprida a
+ * ordem (grandfathering aplicado — 13 aprovados — e Rules Stage 1 publicadas
+ * negando autoaprovação). Se alguém desligar sem intenção, este teste falha.
  */
 describe('LISTENER_APPROVAL_ENFORCED', () => {
-  it('está DESLIGADO — ligar exige migração de grandfathering antes', () => {
-    expect(LISTENER_APPROVAL_ENFORCED).toBe(false);
+  it('está LIGADO — grandfathering + Rules Stage 1 publicados em 19/08', () => {
+    expect(LISTENER_APPROVAL_ENFORCED).toBe(true);
   });
 });
 
-describe('canActAsListener — enforcement DESLIGADO (estado atual)', () => {
-  it('aprova quem está em modo Acolher, sem exigir listenerStatus', () => {
-    expect(canActAsListener({ role: 'listener' })).toBe(true);
-    expect(canActAsListener({ role: 'listener', listenerStatus: 'not_requested' })).toBe(true);
-    expect(canActAsListener({ role: 'listener', listenerStatus: 'rejected' })).toBe(true);
+describe('canActAsListener — enforcement LIGADO', () => {
+  it('aprova SOMENTE listenerStatus approved (role é só o modo)', () => {
+    expect(canActAsListener({ role: 'listener', listenerStatus: 'approved' })).toBe(true);
+    expect(canActAsListener({ role: 'speaker', listenerStatus: 'approved' })).toBe(true);
   });
 
-  it('recusa quem não está em modo Acolher', () => {
-    expect(canActAsListener({ role: 'speaker' })).toBe(false);
+  it('modo Acolher sem aprovação NÃO basta mais', () => {
+    expect(canActAsListener({ role: 'listener' })).toBe(false);
+    expect(canActAsListener({ role: 'listener', listenerStatus: 'not_requested' })).toBe(false);
+    expect(canActAsListener({ role: 'listener', listenerStatus: 'rejected' })).toBe(false);
+  });
+
+  it('vazio/nulo não passa', () => {
     expect(canActAsListener({})).toBe(false);
     expect(canActAsListener(null)).toBe(false);
   });
 
-  it('NENHUM acolhedor existente é bloqueado — a razão de a flag nascer false', () => {
-    // Todo acolhedor de hoje tem role='listener' e nenhum listenerStatus.
-    expect(canActAsListener({ role: 'listener' })).toBe(true);
+  it('grandfathered continuam funcionando (a razão da migração vir antes)', () => {
+    // Todo acolhedor pré-existente recebeu listenerStatus='approved' na migração.
+    expect(canActAsListener({ role: 'listener', listenerStatus: 'approved' })).toBe(true);
   });
 
-  it('ninguém vê a tela de treinamento enquanto a flag estiver desligada', () => {
-    expect(needsListenerTraining({ role: 'speaker' })).toBe(false);
-    expect(needsListenerTraining({ role: 'listener' })).toBe(false);
-    expect(needsListenerTraining(null)).toBe(false);
+  it('tela de treinamento aparece para quem toca Acolher sem aprovação', () => {
+    expect(needsListenerTraining({ role: 'speaker' })).toBe(true);
+    expect(needsListenerTraining({ role: 'listener' })).toBe(true);
+    expect(needsListenerTraining({ role: 'listener', listenerStatus: 'approved' })).toBe(false);
+    expect(needsListenerTraining(null)).toBe(true);
   });
 });
 
@@ -82,6 +89,41 @@ describe('canRequestTraining', () => {
     for (const status of ['training_requested', 'in_training', 'under_review', 'approved', 'rejected'] as const) {
       expect(canRequestTraining({ listenerStatus: status })).toBe(false);
     }
+  });
+});
+
+describe('buildTrainingRequestPatch — idempotência da solicitação', () => {
+  const args = { uid: 'user-1', queueStamp: { sentinel: 'serverTimestamp' }, nowIso: '2026-08-19T12:00:00.000Z' };
+
+  it('monta o patch completo para quem nunca solicitou', () => {
+    expect(buildTrainingRequestPatch({}, args)).toEqual({
+      listenerStatus: 'training_requested',
+      listenerStatusUpdatedAt: '2026-08-19T12:00:00.000Z',
+      listenerTrainingRequestedAt: { sentinel: 'serverTimestamp' },
+      listenerStatusUpdatedBy: 'user-1',
+    });
+    expect(buildTrainingRequestPatch({ role: 'speaker' }, args)).not.toBeNull();
+    expect(buildTrainingRequestPatch({ listenerStatus: 'not_requested' }, args)).not.toBeNull();
+  });
+
+  it('devolve null para quem já entrou no ciclo — clique repetido = ZERO write', () => {
+    // O carimbo da fila (serverTimestamp) é write-once: qualquer status fora
+    // de not_requested significa que ele já existe e não pode ser regravado.
+    for (const status of ['training_requested', 'in_training', 'under_review', 'approved', 'rejected'] as const) {
+      expect(buildTrainingRequestPatch({ listenerStatus: status }, args)).toBeNull();
+    }
+  });
+
+  it('devolve null sem uid — nunca grava às cegas', () => {
+    expect(buildTrainingRequestPatch({}, { ...args, uid: null })).toBeNull();
+    expect(buildTrainingRequestPatch({}, { ...args, uid: undefined })).toBeNull();
+    expect(buildTrainingRequestPatch({}, { ...args, uid: '' })).toBeNull();
+  });
+
+  it('o carimbo da fila é o sentinela injetado, nunca um relógio local', () => {
+    const stamp = Symbol('serverTimestamp');
+    const patch = buildTrainingRequestPatch({}, { ...args, queueStamp: stamp });
+    expect(patch?.listenerTrainingRequestedAt).toBe(stamp);
   });
 });
 

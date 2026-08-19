@@ -43,6 +43,17 @@ describe('buildNotificationRoute', () => {
     ).toBeNull();
   });
 
+  it('listener_status → Home (o estado verdadeiro mora no perfil, não no payload)', () => {
+    expect(
+      buildNotificationRoute({ type: 'listener_status', status: 'in_training' })
+    ).toEqual({ kind: 'home' });
+    expect(
+      buildNotificationRoute({ type: 'listener_status', status: 'approved' })
+    ).toEqual({ kind: 'home' });
+    // Sem `status` ainda vai para a Home: a navegação não depende do payload.
+    expect(buildNotificationRoute({ type: 'listener_status' })).toEqual({ kind: 'home' });
+  });
+
   it('type desconhecido → null', () => {
     expect(buildNotificationRoute({ type: 'marketing_blast', sessionId: 'x' })).toBeNull();
   });

@@ -35,8 +35,12 @@ import type { ListenerStatus, UserProfile } from '@models/user';
  *
  * Governa **tudo**: o gate de solicitação na UI, a chave Online, o recebimento
  * de chamadas, o Explorar e o agendamento. Um interruptor, um lugar.
+ *
+ * LIGADA em 19/08/2026 — DEPOIS de: grandfathering aplicado (13 aprovados),
+ * Rules Stage 1 publicadas (autoaprovação negada, write-once do carimbo da
+ * fila) e flag espelho da API ligada no mesmo ciclo.
  */
-export const LISTENER_APPROVAL_ENFORCED = false;
+export const LISTENER_APPROVAL_ENFORCED = true;
 
 /** Aceita qualquer objeto com os campos relevantes — inclusive docs crus do Firestore. */
 export interface ListenerSource {
@@ -105,28 +109,65 @@ export function canRequestTraining(
   return getListenerStatus(profile) === 'not_requested';
 }
 
+/**
+ * Patch da única transição self. Ver `buildTrainingRequestPatch`.
+ * `type` (não `interface`) de propósito: type alias ganha index signature
+ * implícita e é aceito direto pelo `updateDoc` do Firestore.
+ */
+export type TrainingRequestPatch = {
+  listenerStatus: 'training_requested';
+  /** ISO do aparelho — só informativo, NUNCA é a chave da fila. */
+  listenerStatusUpdatedAt: string;
+  /** Sentinela serverTimestamp() — a CHAVE DA FILA, carimbada pelo servidor. */
+  listenerTrainingRequestedAt: unknown;
+  listenerStatusUpdatedBy: string;
+};
+
+/**
+ * Decide (puro) se a solicitação de treinamento pode ser gravada e monta o
+ * patch. `null` = zero write: quem já entrou no ciclo não grava de novo, e o
+ * carimbo da fila (`listenerTrainingRequestedAt`) permanece write-once.
+ *
+ * O sentinela `serverTimestamp()` chega por injeção (`queueStamp`) para este
+ * módulo continuar puro e testável sem mock de firebase — e porque a ordem da
+ * fila nunca pode depender do relógio do aparelho.
+ */
+export function buildTrainingRequestPatch(
+  profile: ListenerSource | null | undefined,
+  args: { uid: string | null | undefined; queueStamp: unknown; nowIso: string }
+): TrainingRequestPatch | null {
+  if (!args.uid) return null;
+  if (!canRequestTraining(profile)) return null;
+  return {
+    listenerStatus: 'training_requested',
+    listenerStatusUpdatedAt: args.nowIso,
+    listenerTrainingRequestedAt: args.queueStamp,
+    listenerStatusUpdatedBy: args.uid,
+  };
+}
+
 /** Copy de cada estado do ciclo. Um lugar só, para a UI não divergir. */
 export const LISTENER_STATUS_COPY: Record<
   ListenerStatus,
   { title: string; message: string }
 > = {
   not_requested: {
-    title: 'Quer acolher alguém?',
+    title: 'QUER SE TORNAR UM ACOLHEDOR?',
     message:
       'Acolhedores do Meu Best passam por uma seleção e um treinamento. É assim que cuidamos de quem chega precisando falar — e de quem se dispõe a ouvir.',
   },
   training_requested: {
-    title: 'Solicitação enviada',
+    title: 'VOCÊ ESTÁ NA FILA',
     message:
-      'Recebemos seu interesse em acolher. Em breve entramos em contato com os próximos passos do treinamento.',
+      'Quando chegar a sua vez, vamos orientar você sobre as próximas etapas do treinamento.',
   },
   in_training: {
-    title: 'Você está em treinamento',
+    title: 'TREINAMENTO EM ANDAMENTO',
     message:
       'Continue acompanhando os materiais. Assim que concluir, sua candidatura vai para análise.',
   },
   under_review: {
-    title: 'Sua candidatura está em análise',
+    title: 'SEU PROCESSO ESTÁ EM ANÁLISE',
     message:
       'Estamos revisando seu treinamento. Avisaremos assim que houver uma resposta.',
   },

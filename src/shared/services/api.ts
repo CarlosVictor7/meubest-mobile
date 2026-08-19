@@ -69,4 +69,16 @@ export const api = {
       '/api/analyze-session',
       { method: 'POST', body: { sessionId } }
     ),
+
+  /**
+   * Posição na fila de treinamento de acolhedor.
+   * A posição vem SEMPRE da API (ordenada por `listenerTrainingRequestedAt`
+   * do servidor) e NUNCA é armazenada no Firestore — seria um dado derivado
+   * que apodrece a cada mudança na fila.
+   */
+  getListenerQueuePosition: (token: string) =>
+    request<{ ok: boolean; status: string; position: number | null; total: number }>(
+      '/listener/queue-position',
+      { token }
+    ),
 };

@@ -113,6 +113,12 @@ export function isVisibleInExplore(
   if (!candidate?.id) return false;
   if (candidate.id === viewer.uid) return false;
   if (isBlockedEitherWay(candidate, viewer)) return false;
+  // MODO: o Explorar mostra quem está em modo Acolher AGORA. Com o
+  // enforcement, autorização (approved) e modo (role) são distintos — um
+  // aprovado em modo Desabafar não está acolhendo e não deve ser listado
+  // (espelha a query paginada, que também filtra por role).
+  if (candidate.role !== 'listener') return false;
+  // AUTORIZAÇÃO: com a flag ligada, só listenerStatus === 'approved'.
   if (!canActAsListener(candidate)) return false;
   return true;
 }

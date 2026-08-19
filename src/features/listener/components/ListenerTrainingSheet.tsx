@@ -13,7 +13,7 @@
  *
  * ⚠️ Esta tela só é alcançável com `LISTENER_APPROVAL_ENFORCED = true`.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -29,10 +29,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, ShieldCheck, HeartHandshake, GraduationCap, Clock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
+import { api } from '@shared/services/api';
+import { getFirebaseIdToken } from '@shared/services/paymentService';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import {
+  buildTrainingRequestPatch,
   canRequestTraining,
   getListenerStatus,
   LISTENER_STATUS_COPY,
@@ -76,21 +79,58 @@ export function ListenerTrainingSheet({
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Posição na fila — vem da API a cada abertura do sheet, uma chamada só.
+  // Nunca vai para o Firestore: é dado derivado que muda quando a fila anda.
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [queueLoading, setQueueLoading] = useState(false);
+
   const status = getListenerStatus(profile);
   const copy = LISTENER_STATUS_COPY[status];
   const podeSolicitar = canRequestTraining(profile);
 
+  useEffect(() => {
+    if (!visible || status !== 'training_requested') return;
+    // `active` evita setState após fechar o sheet no meio da resposta.
+    let active = true;
+    setQueuePosition(null);
+    setQueueLoading(true);
+    (async () => {
+      try {
+        const token = await getFirebaseIdToken();
+        const res = await api.getListenerQueuePosition(token);
+        if (active && res.ok && typeof res.position === 'number') {
+          setQueuePosition(res.position);
+        }
+      } catch {
+        // Sem posição não é erro fatal: o modal mostra o texto sem o número.
+      } finally {
+        if (active) setQueueLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [visible, status]);
+
   const handleRequest = async () => {
     if (!uid) return;
+    // Decisão pura e idempotente: se o status já saiu de `not_requested`
+    // (clique repetido, snapshot atrasado), o patch é null e NADA é gravado —
+    // o carimbo da fila permanece write-once.
+    const patch = buildTrainingRequestPatch(profile, {
+      uid,
+      queueStamp: serverTimestamp(),
+      nowIso: new Date().toISOString(),
+    });
+    if (!patch || submitting) return;
     setSubmitting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       // A ÚNICA transição que o próprio usuário faz. Qualquer outra é
       // privativa da administração — garantido pelas Firestore Rules.
-      await updateDoc(doc(db, 'users', uid), {
-        listenerStatus: 'training_requested',
-        listenerStatusUpdatedAt: new Date().toISOString(),
-      });
+      // `listenerTrainingRequestedAt` é serverTimestamp: a ordem da fila é do
+      // relógio do SERVIDOR, nunca do aparelho.
+      await updateDoc(doc(db, 'users', uid), patch);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         'Solicitação enviada',
@@ -159,6 +199,24 @@ export function ListenerTrainingSheet({
           >
             <Text style={styles.lead}>{copy.message}</Text>
 
+            {/* Posição na fila — só para quem está aguardando. Se a API falhar,
+                o modal segue sem o número: a posição é um extra, não o conteúdo. */}
+            {status === 'training_requested' && (
+              <View style={styles.queueBox}>
+                {queueLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : queuePosition !== null ? (
+                  <Text style={styles.queueText}>
+                    Sua posição atual: <Text style={styles.queuePosition}>{queuePosition}º</Text>
+                  </Text>
+                ) : (
+                  <Text style={styles.queueText}>
+                    Você está na fila de espera do treinamento.
+                  </Text>
+                )}
+              </View>
+            )}
+
             {/* Os passos só fazem sentido para quem ainda não entrou no ciclo. */}
             {podeSolicitar &&
               PASSOS.map(({ Icon, title, body }) => (
@@ -184,20 +242,32 @@ export function ListenerTrainingSheet({
           </ScrollView>
 
           {podeSolicitar && (
-            <TouchableOpacity
-              style={[styles.cta, submitting && styles.ctaDisabled, shadows.primary]}
-              onPress={handleRequest}
-              disabled={submitting}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Quero participar do treinamento"
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#FFF" />
-              ) : (
-                <Text style={styles.ctaText}>QUERO PARTICIPAR DO TREINAMENTO</Text>
-              )}
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[styles.cta, submitting && styles.ctaDisabled, shadows.primary]}
+                onPress={handleRequest}
+                disabled={submitting}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Quero participar do treinamento"
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.ctaText}>QUERO PARTICIPAR DO TREINAMENTO</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ctaSecondary}
+                onPress={onClose}
+                disabled={submitting}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não"
+              >
+                <Text style={styles.ctaSecondaryText}>AGORA NÃO</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
       </View>
@@ -300,5 +370,38 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     fontWeight: typography.weight.black,
     letterSpacing: 0.6,
+  },
+  ctaSecondary: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaSecondaryText: {
+    color: colors.textMutedValue,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.6,
+  },
+  queueBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: `${colors.primary}0D`,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    minHeight: 56,
+  },
+  queueText: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+    textAlign: 'center',
+  },
+  queuePosition: {
+    color: colors.primary,
+    fontWeight: typography.weight.black,
+    fontSize: typography.size.md,
   },
 });

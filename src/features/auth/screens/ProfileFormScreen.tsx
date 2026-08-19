@@ -26,12 +26,19 @@ import {
   ChevronRight,
   Shield,
   Sparkles,
+  Camera,
+  Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-import { Button } from '@shared/components';
+import { Avatar, Button } from '@shared/components';
+import {
+  pickProfileImage,
+  processProfileImage,
+  uploadProfilePhoto,
+} from '@shared/services/profilePhotoService';
 import { SelectSheet } from '@shared/components/SelectSheet';
 import { BR_STATES, CITIES_BY_UF } from '@constants/brazilLocations';
 import { RELIGION_OPTIONS, RELIGION_OTHER } from '@constants/religions';
@@ -40,6 +47,7 @@ import {
   BIO_MAX_LENGTH,
   PREFERRED_NAME_MAX_LENGTH,
 } from '@shared/utils/displayName';
+import { LISTENER_APPROVAL_ENFORCED, canActAsListener } from '@shared/utils/listener';
 
 const { width } = Dimensions.get('window');
 
@@ -89,6 +97,13 @@ export function ProfileFormScreen() {
     isAdult: false,
     interests: [] as string[],
   });
+
+  // Foto de perfil OPCIONAL. Fica só local (URI do picker) até o finalize:
+  // o upload no Storage acontece junto da conclusão, quando o UID já existe
+  // (a pessoa se autenticou com Google/Apple antes de chegar aqui).
+  const [photo, setPhoto] = useState<{ uri: string; width?: number; height?: number } | null>(
+    null
+  );
 
   /**
    * Preenche a sugestão de nome quando o perfil chega depois do primeiro render.
@@ -144,6 +159,30 @@ export function ProfileFormScreen() {
     }));
   };
 
+  const handlePickPhoto = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const picked = await pickProfileImage();
+    if (picked.status === 'canceled') return;
+    if (picked.status === 'denied') {
+      Alert.alert(
+        'Permissão necessária',
+        'Autorize o acesso às suas fotos nas configurações do aparelho para escolher uma imagem. Você também pode concluir o cadastro sem foto.'
+      );
+      return;
+    }
+    if (picked.status === 'error') {
+      Alert.alert('Não foi possível', picked.message);
+      return;
+    }
+    setPhoto({ uri: picked.uri, width: picked.width, height: picked.height });
+  };
+
+  const handleRemovePhoto = () => {
+    // Só descarta a escolha local — nada foi enviado ainda.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPhoto(null);
+  };
+
   const handleLogout = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
@@ -183,10 +222,33 @@ export function ProfileFormScreen() {
 
       const bio = formData.bio.trim();
 
+      // Foto ANTES do write final: se o upload falhar, o cadastro segue —
+      // foto nunca bloqueia a conta. (Depois do write o AuthProvider troca de
+      // tela via isProfileComplete, então esta é a última chance na ordem.)
+      let photoUploadFailed = false;
+      if (photo) {
+        try {
+          const processedUri = await processProfileImage(photo.uri, {
+            width: photo.width,
+            height: photo.height,
+          });
+          await uploadProfilePhoto(user.uid, processedUri);
+        } catch (photoError) {
+          console.error('[ProfileForm] Falha no upload da foto (cadastro segue):', photoError);
+          photoUploadFailed = true;
+        }
+      }
+
       await setDoc(
         userRef,
         {
-          role: formData.role,
+          // Enforcement (19/08): escolher "Acolher" no onboarding NÃO grava
+          // role='listener' (as Rules negam sem aprovação prévia) — a pessoa
+          // entra como speaker e o toggle Acolher conduz à fila de treinamento.
+          role:
+            LISTENER_APPROVAL_ENFORCED && !canActAsListener(profile)
+              ? 'speaker'
+              : formData.role,
           // `preferredName` é o nome público escolhido pelo usuário.
           // `name` NÃO entra no payload — ele pertence ao provider (Google/Apple)
           // e nenhuma tela de perfil pode sobrescrevê-lo.
@@ -205,6 +267,14 @@ export function ProfileFormScreen() {
         },
         { merge: true }
       );
+
+      if (photoUploadFailed) {
+        // Cadastro concluído; o aviso aparece sobre a tela seguinte.
+        Alert.alert(
+          'Cadastro concluído',
+          'Não foi possível enviar a sua foto agora. Você pode adicionar depois na tela de Perfil.'
+        );
+      }
     } catch (e) {
       console.error('[ProfileForm] Error saving profile:', e);
       Alert.alert('Erro ao salvar', 'Não foi possível finalizar seu cadastro no momento. Tente novamente.');
@@ -392,6 +462,57 @@ export function ProfileFormScreen() {
                 </View>
 
                 <View style={styles.formCard}>
+                  {/* Foto de perfil — OPCIONAL. Preview local; o upload só
+                      acontece no finalize. Sem foto o placeholder mostra a
+                      inicial do nome escolhido. */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>FOTO DE PERFIL (OPCIONAL)</Text>
+                    <View style={styles.photoRow}>
+                      <Avatar
+                        photoURL={photo?.uri ?? null}
+                        name={formData.preferredName || undefined}
+                        size="xl"
+                      />
+                      <View style={styles.photoActions}>
+                        {photo ? (
+                          <>
+                            <TouchableOpacity
+                              style={styles.photoActionBtn}
+                              onPress={handlePickPhoto}
+                              activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityLabel="Trocar foto"
+                            >
+                              <Camera size={14} color={colors.primary} strokeWidth={2.5} />
+                              <Text style={styles.photoActionText}>TROCAR</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.photoActionBtnRemove}
+                              onPress={handleRemovePhoto}
+                              activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityLabel="Remover foto"
+                            >
+                              <Trash2 size={14} color="#EF4444" strokeWidth={2.5} />
+                              <Text style={styles.photoActionTextRemove}>REMOVER</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.photoActionBtn}
+                            onPress={handlePickPhoto}
+                            activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Adicionar foto"
+                          >
+                            <Camera size={14} color={colors.primary} strokeWidth={2.5} />
+                            <Text style={styles.photoActionText}>ADICIONAR FOTO</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
                   {/* Nome preferido — obrigatório no cadastro novo */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>COMO VOCÊ QUER SER CHAMADO?</Text>
@@ -812,6 +933,51 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: spacing.xs,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: 2,
+  },
+  photoActions: {
+    flex: 1,
+    gap: spacing.xs,
+    alignItems: 'flex-start',
+  },
+  photoActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: spacing.sm - 2,
+    paddingHorizontal: spacing.md,
+  },
+  photoActionText: {
+    fontSize: 11,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  photoActionBtnRemove: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingVertical: spacing.sm - 2,
+    paddingHorizontal: spacing.md,
+  },
+  photoActionTextRemove: {
+    fontSize: 11,
+    fontWeight: typography.weight.black,
+    color: '#EF4444',
+    letterSpacing: 0.5,
   },
   fieldLabel: {
     fontSize: 10,

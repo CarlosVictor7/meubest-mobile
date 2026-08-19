@@ -19,6 +19,11 @@
  *                               (Se a sessão não existir mais, a própria tela
  *                               trata — fallback seguro para a lista.)
  *
+ *   listener_status            → Home. O estado do ciclo de acolhedor mora no
+ *                               perfil (onSnapshot) — a pessoa abre o app e a
+ *                               Home já reflete o status atual. Nenhuma tela
+ *                               nova, nenhum dado do payload é necessário.
+ *
  * Payload desconhecido ou malformado → null, nunca lança.
  */
 
@@ -37,6 +42,10 @@ export function buildNotificationRoute(data: unknown): NotificationRoute | null 
   switch (type) {
     case 'incoming_support_request':
       // A Home revalida a sessão — não precisamos do id para navegar.
+      return { kind: 'home' };
+
+    case 'listener_status':
+      // O status verdadeiro vem do perfil, não do payload — Home basta.
       return { kind: 'home' };
 
     case 'scheduled_session_created':
