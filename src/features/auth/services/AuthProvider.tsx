@@ -18,7 +18,9 @@ import type { UserProfile } from '@models/user';
 import {
   registerForPushNotificationsAsync,
   registerNotificationResponseListener,
+  consumeColdStartNotificationAsync,
 } from '@shared/services/notifications';
+import { maskToken } from '@shared/utils/maskToken';
 
 interface AuthContextValue {
   isInitialized: boolean;
@@ -66,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        console.log('[PushRegistration] Novo token detectado:', token);
+        console.log(`[PushRegistration] Novo token detectado: ${maskToken(token)}`);
 
         // 1. Unicidade: remove este token de qualquer outro usuário no Firestore.
         //
@@ -127,6 +129,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Listener de cliques em notificações (toque) ────────────────────
   useEffect(() => {
     const sub = registerNotificationResponseListener();
+
+    // COLD START: se uma push abriu o app do zero, o toque aconteceu antes
+    // deste listener existir. A intenção fica na fila do notificationNavigation
+    // e só navega quando o RootNavigator marcar a árvore autenticada como
+    // pronta — nunca antes do bootstrap de auth/perfil.
+    consumeColdStartNotificationAsync();
+
     return () => {
       if (sub) sub.remove();
     };
