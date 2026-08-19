@@ -3,6 +3,7 @@ import {
   getFirstName,
   getInitial,
   suggestPreferredName,
+  normalizeLegacyName,
   DISPLAY_NAME_FALLBACK,
 } from '../displayName';
 
@@ -99,5 +100,61 @@ describe('suggestPreferredName', () => {
     expect(suggestPreferredName({})).toBe('');
     expect(suggestPreferredName(null)).toBe('');
     expect(suggestPreferredName({ name: '   ' })).toBe('');
+  });
+
+  it('a sugestão já nasce sem o + legado', () => {
+    // A semente do campo "Como você quer ser chamado?" não pode propagar a
+    // contaminação: quem salvar sem editar fica com preferredName limpo.
+    expect(suggestPreferredName({ name: 'Carlos+Victor Farias' })).toBe('Carlos');
+  });
+});
+
+describe('normalizeLegacyName — o + do provider', () => {
+  it('o caso real de produção', () => {
+    expect(normalizeLegacyName('Carlos+Victor Farias')).toBe('Carlos Victor Farias');
+  });
+
+  it('múltiplos + e + nas pontas', () => {
+    expect(normalizeLegacyName('A+B+C')).toBe('A B C');
+    expect(normalizeLegacyName('+Ana+')).toBe('Ana');
+  });
+
+  it('colapsa whitespace repetido', () => {
+    expect(normalizeLegacyName('Ana + Maria')).toBe('Ana Maria');
+    expect(normalizeLegacyName('  Ana   Maria  ')).toBe('Ana Maria');
+  });
+
+  it('nome sem + passa intacto', () => {
+    expect(normalizeLegacyName('Ana Maria')).toBe('Ana Maria');
+  });
+
+  it('entradas inválidas → string vazia, sem lançar', () => {
+    expect(normalizeLegacyName(null)).toBe('');
+    expect(normalizeLegacyName(undefined)).toBe('');
+    expect(normalizeLegacyName(42 as any)).toBe('');
+  });
+});
+
+describe('integração: o + no fallback vs a escolha do usuário', () => {
+  it('name legado com + é normalizado na exibição — sem migração', () => {
+    expect(getDisplayName({ name: 'Carlos+Victor Farias' })).toBe('Carlos Victor Farias');
+    expect(getFirstName({ name: 'Carlos+Victor Farias' })).toBe('Carlos');
+    expect(getInitial({ name: '+Carlos' })).toBe('C');
+  });
+
+  it('preferredName com + é PRESERVADO — a escolha do usuário vence', () => {
+    expect(
+      getDisplayName({ preferredName: 'C+V', name: 'Carlos+Victor Farias' })
+    ).toBe('C+V');
+  });
+
+  it('preferredName sempre vence o fallback normalizado', () => {
+    expect(
+      getDisplayName({ preferredName: 'Cacau', name: 'Carlos+Victor Farias' })
+    ).toBe('Cacau');
+  });
+
+  it('name feito só de + cai no fallback final', () => {
+    expect(getDisplayName({ name: '+++' })).toBe(DISPLAY_NAME_FALLBACK);
   });
 });

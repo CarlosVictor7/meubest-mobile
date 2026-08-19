@@ -30,6 +30,22 @@ function clean(value: string | null | undefined): string {
 }
 
 /**
+ * Normaliza o `name` LEGADO vindo do provider para exibição.
+ *
+ * Causa raiz auditada em 19/08: o `+` de "Carlos+Victor Farias" não é bug de
+ * decoding nosso — é o valor literal do `displayName` da conta Google, que
+ * entrou no Firebase Auth assim e daí para o Firestore. Nenhuma migração:
+ * o dado original fica intacto e a limpeza acontece só na leitura.
+ *
+ * ⚠️ APENAS o fallback `name` passa por aqui. `preferredName` é a escolha
+ * explícita do usuário — se a pessoa quis um `+`, o `+` fica.
+ */
+export function normalizeLegacyName(name: string | null | undefined): string {
+  if (typeof name !== 'string') return '';
+  return name.replace(/\+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Nome público completo.
  *
  * @param fallback texto usado quando não há nome nenhum. Passe `''` quando o
@@ -40,7 +56,7 @@ export function getDisplayName(
   fallback: string = DISPLAY_NAME_FALLBACK
 ): string {
   if (!profile) return fallback;
-  return clean(profile.preferredName) || clean(profile.name) || fallback;
+  return clean(profile.preferredName) || normalizeLegacyName(profile.name) || fallback;
 }
 
 /**
