@@ -6,9 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
+// SafeAreaView do react-native é NO-OP no Android — com edgeToEdge, o header
+// ficava sob a status bar. Mesmo defeito já corrigido em SessionDetailScreen.
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ShieldCheck, ArrowRight, AlertTriangle } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -50,7 +52,7 @@ export function ConsentScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
