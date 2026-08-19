@@ -26,6 +26,7 @@ import { OAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import type { UserProfile } from '@models/user';
+import { LISTENER_APPROVAL_ENFORCED } from '@shared/utils/listener';
 
 // ─── Tipos ──────────────────────────────────────────────────────────
 export type AppleSignInResult =
@@ -76,13 +77,15 @@ async function upsertAppleProfile(params: {
   const isNewUser = !userSnap.exists();
 
   if (isNewUser) {
+    // Enforcement (19/08): ninguém NASCE acolhedor — mesma regra do googleAuth.
+    const effectiveRole = LISTENER_APPROVAL_ENFORCED ? 'speaker' : role;
     // Perfil mínimo para novo usuário Apple
     const profile: Partial<UserProfile> = {
       uid,
-      role,
+      role: effectiveRole,
       authProvider: 'apple',
       providerIds,
-      isOnline: role === 'listener',
+      isOnline: effectiveRole === 'listener',
       createdAt: serverTimestamp() as any,
       updatedAt: serverTimestamp() as any,
       isProfileComplete: false,

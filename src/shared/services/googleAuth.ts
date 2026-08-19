@@ -19,6 +19,7 @@ import Constants from 'expo-constants';
 import { auth, db } from './firebase';
 import { appConfig } from '@constants/appConfig';
 import { buildProviderPatch } from '@shared/utils/providerPatch';
+import { LISTENER_APPROVAL_ENFORCED } from '@shared/utils/listener';
 import type { UserProfile } from '@models/user';
 
 // ─── Tipos ─────────────────────────────────────────────────────────
@@ -75,13 +76,18 @@ export async function signInWithGoogle(
     const isNewUser = !userSnap.exists();
 
     if (isNewUser) {
+      // Enforcement (19/08): ninguém NASCE acolhedor. Quem escolheu "Acolher"
+      // no onboarding entra como speaker e é conduzido à fila de treinamento
+      // pelo toggle (as Rules negariam role='listener' sem aprovação no update;
+      // criar já no modo certo evita um estado de UI sem poderes).
+      const effectiveRole = LISTENER_APPROVAL_ENFORCED ? 'speaker' : role;
       const profile: Partial<UserProfile> = {
         uid,
         name: displayName ?? 'Usuário',
         email: email ?? '',
         photoURL: photoURL ?? undefined,
-        role,
-        isOnline: role === 'listener',
+        role: effectiveRole,
+        isOnline: effectiveRole === 'listener',
         createdAt: serverTimestamp() as any,
         updatedAt: serverTimestamp() as any,
         isProfileComplete: false,

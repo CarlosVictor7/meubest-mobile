@@ -35,8 +35,12 @@ import type { ListenerStatus, UserProfile } from '@models/user';
  *
  * Governa **tudo**: o gate de solicitação na UI, a chave Online, o recebimento
  * de chamadas, o Explorar e o agendamento. Um interruptor, um lugar.
+ *
+ * LIGADA em 19/08/2026 — DEPOIS de: grandfathering aplicado (13 aprovados),
+ * Rules Stage 1 publicadas (autoaprovação negada, write-once do carimbo da
+ * fila) e flag espelho da API ligada no mesmo ciclo.
  */
-export const LISTENER_APPROVAL_ENFORCED = false;
+export const LISTENER_APPROVAL_ENFORCED = true;
 
 /** Aceita qualquer objeto com os campos relevantes — inclusive docs crus do Firestore. */
 export interface ListenerSource {

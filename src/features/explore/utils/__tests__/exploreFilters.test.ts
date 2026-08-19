@@ -16,6 +16,7 @@ const viewer = { uid: 'eu', blockedUserIds: [] as string[] };
 const acolhedor = (over: Partial<ExploreCandidate> = {}): ExploreCandidate => ({
   id: 'a1',
   role: 'listener',
+  listenerStatus: 'approved',
   name: 'Ana Souza',
   bio: 'Gosto de ouvir.',
   state: 'SP',
@@ -74,8 +75,14 @@ describe('isVisibleInExplore', () => {
    * trocar `canActAsListener`, ele deve falhar — é essa falha que prova que o
    * Explorar passou a respeitar o enforcement sem alterar `exploreFilters`.
    */
-  it('hoje ainda mostra listener sem aprovação (PREPARAÇÃO — muda na Sprint 6)', () => {
-    expect(isVisibleInExplore(acolhedor({ listenerStatus: 'not_requested' }), viewer)).toBe(true);
+  it('ENFORCEMENT (19/08): listener sem aprovação NÃO aparece mais', () => {
+    expect(isVisibleInExplore(acolhedor({ listenerStatus: 'not_requested' }), viewer)).toBe(false);
+    expect(isVisibleInExplore(acolhedor({ listenerStatus: 'rejected' }), viewer)).toBe(false);
+    expect(isVisibleInExplore(acolhedor({ listenerStatus: undefined }), viewer)).toBe(false);
+  });
+
+  it('aprovado em modo Desabafar também não aparece (role é o modo)', () => {
+    expect(isVisibleInExplore(acolhedor({ role: 'speaker' }), viewer)).toBe(false);
   });
 });
 

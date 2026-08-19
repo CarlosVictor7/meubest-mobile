@@ -47,6 +47,7 @@ import {
   BIO_MAX_LENGTH,
   PREFERRED_NAME_MAX_LENGTH,
 } from '@shared/utils/displayName';
+import { LISTENER_APPROVAL_ENFORCED, canActAsListener } from '@shared/utils/listener';
 
 const { width } = Dimensions.get('window');
 
@@ -241,7 +242,13 @@ export function ProfileFormScreen() {
       await setDoc(
         userRef,
         {
-          role: formData.role,
+          // Enforcement (19/08): escolher "Acolher" no onboarding NÃO grava
+          // role='listener' (as Rules negam sem aprovação prévia) — a pessoa
+          // entra como speaker e o toggle Acolher conduz à fila de treinamento.
+          role:
+            LISTENER_APPROVAL_ENFORCED && !canActAsListener(profile)
+              ? 'speaker'
+              : formData.role,
           // `preferredName` é o nome público escolhido pelo usuário.
           // `name` NÃO entra no payload — ele pertence ao provider (Google/Apple)
           // e nenhuma tela de perfil pode sobrescrevê-lo.

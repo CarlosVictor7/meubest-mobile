@@ -193,11 +193,11 @@ describe('isListenerLiveNow — presença ao vivo (popup em tempo real)', () => 
   const stale = new Date(NOW - PRESENCE_STALE_AFTER_MS - 1).toISOString();
 
   it('exige modo acolhedor + chave ligada + presença fresca', () => {
-    expect(isListenerLiveNow({ role: 'listener', isOnline: true, lastSeenAt: fresh }, NOW)).toBe(true);
+    expect(isListenerLiveNow({ role: 'listener', listenerStatus: 'approved', isOnline: true, lastSeenAt: fresh }, NOW)).toBe(true);
   });
 
   it('presença obsoleta derruba o AO VIVO (mas não a push — ver abaixo)', () => {
-    expect(isListenerLiveNow({ role: 'listener', isOnline: true, lastSeenAt: stale }, NOW)).toBe(false);
+    expect(isListenerLiveNow({ role: 'listener', listenerStatus: 'approved', isOnline: true, lastSeenAt: stale }, NOW)).toBe(false);
   });
 
   it('speaker nunca está live como acolhedor', () => {
@@ -205,7 +205,7 @@ describe('isListenerLiveNow — presença ao vivo (popup em tempo real)', () => 
   });
 
   it('chave desligada → false', () => {
-    expect(isListenerLiveNow({ role: 'listener', isOnline: false, lastSeenAt: fresh }, NOW)).toBe(false);
+    expect(isListenerLiveNow({ role: 'listener', listenerStatus: 'approved', isOnline: false, lastSeenAt: fresh }, NOW)).toBe(false);
   });
 });
 
@@ -221,7 +221,7 @@ describe('isListenerPushEligibleNow — a regra final do GO (§7)', () => {
     // lastSeenAt velho NÃO cancela o opt-in manual. Fechar o app não é logout.
     expect(
       isListenerPushEligibleNow(
-        { role: 'listener', isOnline: true, lastSeenAt: staleSeen },
+        { role: 'listener', listenerStatus: 'approved', isOnline: true, lastSeenAt: staleSeen },
         foraDoSlot
       )
     ).toBe(true);
@@ -230,7 +230,7 @@ describe('isListenerPushEligibleNow — a regra final do GO (§7)', () => {
   it('chave desligada, mas dentro da agenda → ELEGÍVEL', () => {
     expect(
       isListenerPushEligibleNow(
-        { role: 'listener', isOnline: false, availability: agendaAtiva },
+        { role: 'listener', listenerStatus: 'approved', isOnline: false, availability: agendaAtiva },
         dentroDoSlot
       )
     ).toBe(true);
@@ -239,7 +239,7 @@ describe('isListenerPushEligibleNow — a regra final do GO (§7)', () => {
   it('chave desligada e fora da agenda → NÃO elegível', () => {
     expect(
       isListenerPushEligibleNow(
-        { role: 'listener', isOnline: false, availability: agendaAtiva },
+        { role: 'listener', listenerStatus: 'approved', isOnline: false, availability: agendaAtiva },
         foraDoSlot
       )
     ).toBe(false);
@@ -247,7 +247,7 @@ describe('isListenerPushEligibleNow — a regra final do GO (§7)', () => {
 
   it('logout (isOnline false, sem agenda) → NÃO elegível', () => {
     expect(
-      isListenerPushEligibleNow({ role: 'listener', isOnline: false }, dentroDoSlot)
+      isListenerPushEligibleNow({ role: 'listener', listenerStatus: 'approved', isOnline: false }, dentroDoSlot)
     ).toBe(false);
   });
 
@@ -261,9 +261,10 @@ describe('isListenerPushEligibleNow — a regra final do GO (§7)', () => {
   });
 
   it('é OR, nunca AND: qualquer um dos dois caminhos basta', () => {
-    const soChave = { role: 'listener', isOnline: true } as const;
+    const soChave = { role: 'listener', listenerStatus: 'approved', isOnline: true } as const;
     const soAgenda = {
       role: 'listener',
+      listenerStatus: 'approved',
       isOnline: false,
       availability: agendaAtiva,
     } as const;
