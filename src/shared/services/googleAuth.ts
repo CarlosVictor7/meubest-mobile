@@ -18,6 +18,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Constants from 'expo-constants';
 import { auth, db } from './firebase';
 import { appConfig } from '@constants/appConfig';
+import { buildProviderPatch } from '@shared/utils/providerPatch';
 import type { UserProfile } from '@models/user';
 
 // ─── Tipos ─────────────────────────────────────────────────────────
@@ -96,12 +97,17 @@ export async function signInWithGoogle(
       };
       await setDoc(userRef, profile);
     } else {
-      // Usuário existente: apenas atualiza informações básicas vindo do Google
-      await setDoc(
-        userRef,
-        { name: displayName, photoURL, email },
-        { merge: true }
-      );
+      // Usuário existente: atualiza SÓ o que o Google realmente forneceu.
+      //
+      // `merge: true` mescla CHAVES, não valores — uma chave com null
+      // SOBRESCREVE o dado bom. `displayName: null` apagava o nome de quem já
+      // usava o app, e `email: null` violava `isValidUser` nas Rules, negando
+      // a escrita inteira. `buildProviderPatch` omite tudo que for nulo/vazio
+      // e NUNCA inclui `preferredName` (escolha do usuário, provider não toca).
+      const patch = buildProviderPatch({ displayName, photoURL, email });
+      if (Object.keys(patch).length > 0) {
+        await setDoc(userRef, patch, { merge: true });
+      }
     }
 
     return { type: 'success', uid, isNewUser };
