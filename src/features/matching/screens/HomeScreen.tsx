@@ -242,7 +242,7 @@ export function HomeScreen() {
         {/* ═══════════════════════════════════════════════════════════
             1-3. HEADER PADRÃO (avatar, segmented, online, notice)
         ═══════════════════════════════════════════════════════════ */}
-        <TabHeader />
+        <TabHeader showNotice />
 
         <View style={styles.content}>
 

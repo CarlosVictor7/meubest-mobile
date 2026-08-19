@@ -85,11 +85,21 @@ const HOW_IT_WORKS = [
 interface TabHeaderProps {
   /** Oculta SegmentedControl e bloco de chave (para Carteira e Menu) */
   hideControls?: boolean;
+  /**
+   * Renderiza a faixa "Rede de voluntários — não use em emergências" ENTRE a
+   * saudação e a chave. O aviso pertence SÓ à Home (decisão de 19/08): antes
+   * ele vivia incondicional aqui dentro e ocupava o topo de quatro telas.
+   */
+  showNotice?: boolean;
   /** Callback extra quando o papel é alterado */
   onRoleChange?: (role: string) => void;
 }
 
-export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps) {
+export function TabHeader({
+  hideControls = false,
+  showNotice = false,
+  onRoleChange,
+}: TabHeaderProps) {
   const { user, profile } = useAuth();
 
   // ── Estado local do papel — atualiza UI imediatamente ────────────
@@ -288,6 +298,16 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
         </View>
       </SafeAreaView>
 
+      {/* ── Aviso de segurança — SÓ onde for pedido (Home) ────────── */}
+      {/* Fica ENTRE a saudação e a chave, na ordem definida em 19/08:
+          greeting → aviso → Desabafar|Acolher. A faixa abre o modal com
+          CVV 188 e SAMU 192 discáveis. */}
+      {showNotice && (
+        <View style={styles.noticeWrap}>
+          <NoticeStrip />
+        </View>
+      )}
+
       {/* ── Controles de papel ───────────────────────────────────── */}
       {!hideControls && (
         <View style={styles.controls}>
@@ -331,15 +351,6 @@ export function TabHeader({ hideControls = false, onRoleChange }: TabHeaderProps
           </View>
         </View>
       )}
-
-      {/* ── Aviso de segurança — faixa compacta + modal ──────────── */}
-      {/* Era um NoticeCard de ~200px. Como o TabHeader é renderizado por Home,
-          Sessões, Menu e Carteira, o card ocupava o topo de quatro telas.
-          A mensagem não sumiu: a faixa abre um modal que diz mais do que o
-          card dizia (CVV 188 e SAMU 192 discáveis). */}
-      <View style={styles.noticeWrap}>
-        <NoticeStrip />
-      </View>
 
       {/* Tela de treinamento — inerte enquanto o enforcement estiver desligado */}
       <ListenerTrainingSheet

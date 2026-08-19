@@ -41,7 +41,6 @@ import { Calendar, Clock, Video, CalendarClock, ChevronDown } from 'lucide-react
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { useNavigation } from '@react-navigation/native';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
-import { NoticeStrip } from '@shared/components/NoticeStrip';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming, getCounterpart } from '@features/session/utils/sessionFilters';
@@ -108,13 +107,12 @@ export function SessionsListScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
-      {/* Sem TabHeader nesta aba — só a faixa de segurança, que continua acessível. */}
+      {/* Sem TabHeader nesta aba. A faixa de segurança saiu daqui em 19/08:
+          o aviso pertence SOMENTE à Home — o acesso a CVV/SAMU continua no
+          Menu (card Suporte e Segurança). */}
       <SafeAreaView edges={['top']} style={styles.safeTop}>
         <View style={styles.topBar}>
           <Text style={styles.topTitle}>SESSÕES</Text>
-        </View>
-        <View style={styles.noticeWrap}>
-          <NoticeStrip />
         </View>
       </SafeAreaView>
 
@@ -506,11 +504,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.black,
     color: colors.primary,
     letterSpacing: 0.5,
-  },
-  noticeWrap: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.xs,
   },
 
   // Card de próximas sessões
