@@ -5,7 +5,7 @@
  * de 19/08 mandou NÃO copiar de lá:
  *
  *   • A web grava UM WRITE POR TOQUE em horário. Aqui a seleção vive em
- *     memória e o CONCLUÍDO faz EXATAMENTE UM setDoc — marcar e desmarcar
+ *     memória e o CONCLUÍDO faz EXATAMENTE UM updateDoc — marcar e desmarcar
  *     seis vezes custa zero. Fechar no X descarta tudo: zero writes.
  *   • A web gera a chave do dia com toISOString() (UTC) — a partir das 21:00
  *     no Brasil ela grava no dia errado. Aqui é `localDateKey`, sempre local.
@@ -32,7 +32,7 @@ import {
 } from 'react-native';
 import { X, Calendar } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
 import {
@@ -155,20 +155,21 @@ export function AvailabilityModal({
       const todayKey = localDateKey(new Date());
       const pruned = pruneAvailability(draftToAvailability(draft), todayKey);
 
-      // O ÚNICO write de toda a interação. `availability` é gravado por inteiro
-      // (não por chave) para a poda remover as datas passadas do documento.
+      // O ÚNICO write de toda a interação.
+      //
+      // ⚠️ updateDoc, NUNCA setDoc({merge:true}): merge faz fusão PROFUNDA de
+      // mapas — as chaves antigas (maio/2026) sobreviveriam à poda, como foi
+      // verificado no emulador em 19/08. updateDoc substitui o campo inteiro,
+      // que é exatamente o que a poda precisa.
+      //
       // O timezone IANA viaja no mesmo write — a API precisa dele para saber
       // "que horas são" na agenda do usuário; perfis antigos sem o campo caem
       // no fallback America/Sao_Paulo do lado do servidor.
-      await setDoc(
-        doc(db, 'users', uid),
-        {
-          availability: pruned,
-          availabilityTimezone:
-            Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'America/Sao_Paulo',
-        },
-        { merge: true }
-      );
+      await updateDoc(doc(db, 'users', uid), {
+        availability: pruned,
+        availabilityTimezone:
+          Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'America/Sao_Paulo',
+      });
       onClose();
     } catch (error) {
       console.warn('[AvailabilityModal] Falha ao salvar a agenda:', error);
