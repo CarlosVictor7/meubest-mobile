@@ -24,11 +24,21 @@ import {
   FileText,
   Lock,
   Trash2,
+  Camera,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { TabHeader } from '@shared/components/TabHeader';
-import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
+import { Avatar, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
+import {
+  pickProfileImage,
+  processProfileImage,
+  uploadProfilePhoto,
+  removeProfilePhoto,
+  ProfilePhotoError,
+  UPLOAD_ERROR_MESSAGE,
+  REMOVE_ERROR_MESSAGE,
+} from '@shared/services/profilePhotoService';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getDisplayName, BIO_MAX_LENGTH, PREFERRED_NAME_MAX_LENGTH } from '@shared/utils/displayName';
@@ -62,6 +72,9 @@ export function ProfileScreen() {
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Foto: pick → process → upload acontecem juntos; o onSnapshot do AuthProvider
+  // atualiza `profile` e a UI reflete sozinha — nenhum estado local de URL.
+  const [photoBusy, setPhotoBusy] = useState(false);
 
 
   // Inicializa dados do usuário a partir do Firestore
@@ -97,6 +110,72 @@ export function ProfileScreen() {
   const toggleNotifications = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEmailNotifications((prev) => !prev);
+  };
+
+  const handleChangePhoto = async () => {
+    const uid = user?.uid;
+    if (!uid || photoBusy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const picked = await pickProfileImage();
+    if (picked.status === 'canceled') return;
+    if (picked.status === 'denied') {
+      Alert.alert(
+        'Permissão necessária',
+        'Autorize o acesso às suas fotos nas configurações do aparelho para escolher uma imagem.'
+      );
+      return;
+    }
+    if (picked.status === 'error') {
+      Alert.alert('Não foi possível', picked.message);
+      return;
+    }
+
+    setPhotoBusy(true);
+    try {
+      const processedUri = await processProfileImage(picked.uri, {
+        width: picked.width,
+        height: picked.height,
+      });
+      await uploadProfilePhoto(uid, processedUri);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      // ProfilePhotoError carrega mensagem segura para a UI; o resto cai no genérico.
+      Alert.alert(
+        'Não foi possível',
+        error instanceof ProfilePhotoError ? error.message : UPLOAD_ERROR_MESSAGE
+      );
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    const uid = user?.uid;
+    const currentPath = profile?.profilePhotoPath;
+    if (!uid || !currentPath || photoBusy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert('Remover foto', 'Deseja remover sua foto de perfil?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          setPhotoBusy(true);
+          try {
+            await removeProfilePhoto(uid, currentPath);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (error) {
+            Alert.alert(
+              'Não foi possível',
+              error instanceof ProfilePhotoError ? error.message : REMOVE_ERROR_MESSAGE
+            );
+          } finally {
+            setPhotoBusy(false);
+          }
+        },
+      },
+    ]);
   };
 
   const handleSave = async () => {
@@ -259,6 +338,47 @@ export function ProfileScreen() {
               <View style={styles.sectionHeader}>
                 <User size={20} color={colors.primary} strokeWidth={2.5} />
                 <Text style={styles.sectionTitle}>PERFIL PESSOAL</Text>
+              </View>
+
+              {/* ─── Foto de perfil ─────────────────────────────────── */}
+              {/* O Avatar resolve a prioridade profilePhotoURL → photoURL →
+                  inicial. REMOVER só existe para foto enviada no Meu Best
+                  (profilePhotoPath) — a do provider não é gerenciada aqui. */}
+              <View style={styles.photoSection}>
+                <View style={styles.photoWrap}>
+                  <Avatar profile={profile} name={getDisplayName(profile, '')} size="xl" />
+                  {photoBusy && (
+                    <View style={styles.photoBusyOverlay}>
+                      <ActivityIndicator size="small" color="#FFF" />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.photoButtons}>
+                  <TouchableOpacity
+                    style={styles.photoBtn}
+                    onPress={handleChangePhoto}
+                    disabled={photoBusy}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Alterar foto de perfil"
+                  >
+                    <Camera size={16} color={colors.primary} strokeWidth={2.5} />
+                    <Text style={styles.photoBtnText}>ALTERAR FOTO</Text>
+                  </TouchableOpacity>
+                  {!!profile?.profilePhotoPath && (
+                    <TouchableOpacity
+                      style={styles.photoBtnRemove}
+                      onPress={handleRemovePhoto}
+                      disabled={photoBusy}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remover foto de perfil"
+                    >
+                      <Trash2 size={16} color="#EF4444" strokeWidth={2.5} />
+                      <Text style={styles.photoBtnRemoveText}>REMOVER FOTO</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
               <View style={styles.fieldWrap}>
@@ -515,6 +635,62 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: typography.tracking.tight,
     textTransform: 'uppercase',
+  },
+
+  // ── Foto de perfil ───────────────────────────────────────────────
+  photoSection: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  photoWrap: {
+    position: 'relative',
+  },
+  photoBusyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 50, // Avatar xl = 100px
+    backgroundColor: 'rgba(26,26,26,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  photoBtnText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  photoBtnRemove: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  photoBtnRemoveText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.black,
+    color: '#EF4444',
+    letterSpacing: 0.5,
   },
 
   // Inputs

@@ -360,7 +360,9 @@ export function EvolutionModal({ visible, onClose, profile }: EvolutionModalProp
                         </View>
 
                         {/* Avatar */}
-                        <Avatar photoURL={user.photoURL} name={getDisplayName(user, 'Apoiador')} size="sm" />
+                        {/* `profile` em vez de photoURL: reflete a foto enviada
+                            no Meu Best (profilePhotoURL) com fallback no provider. */}
+                        <Avatar profile={user} name={getDisplayName(user, 'Apoiador')} size="sm" />
 
                         {/* Dados */}
                         <View style={styles.rankingUserInfo}>

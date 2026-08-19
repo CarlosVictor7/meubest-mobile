@@ -116,4 +116,22 @@ export interface UserProfile {
    * PREPARAÇÃO — nada lê nem escreve até a Sprint 6.
    */
   listenerStatus?: ListenerStatus;
+  /**
+   * Timestamp do Firestore (serverTimestamp) gravado UMA única vez na transição
+   * not_requested → training_requested. É a CHAVE DA FILA de treinamento: a
+   * ordem vem do relógio do servidor, nunca do aparelho do usuário.
+   */
+  listenerTrainingRequestedAt?: unknown;
+  /** UID de quem fez a última transição de `listenerStatus` (auditoria). */
+  listenerStatusUpdatedBy?: string;
+  /**
+   * Path da foto enviada no Meu Best dentro do Storage
+   * (`users/{uid}/profile/avatar.jpg` — path estável, substituição sobrescreve).
+   */
+  profilePhotoPath?: string;
+  /**
+   * downloadURL da foto enviada no Meu Best. Prioridade de exibição:
+   * profilePhotoURL → photoURL (provider, legado) → inicial do nome.
+   */
+  profilePhotoURL?: string;
 }

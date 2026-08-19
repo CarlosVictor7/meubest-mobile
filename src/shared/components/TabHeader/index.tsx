@@ -32,6 +32,7 @@ import { COINS_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { canActAsListener, isInListenerMode, needsListenerTraining } from '@shared/utils/listener';
 import { ListenerTrainingSheet } from '@features/listener/components/ListenerTrainingSheet';
 import { getDisplayName, getFirstName, getInitial } from '@shared/utils/displayName';
+import { getDisplayPhotoUrl } from '@shared/utils/profilePhoto';
 
 
 // Chave de persistência da preferência Online do modo Apoiar
@@ -251,8 +252,8 @@ export function TabHeader({
         <View style={styles.header}>
           {/* Avatar + saudação */}
           <View style={styles.avatarRow}>
-            {profile?.photoURL ? (
-              <Avatar photoURL={profile.photoURL} name={getDisplayName(profile)} size="sm" />
+            {getDisplayPhotoUrl(profile) ? (
+              <Avatar profile={profile} name={getDisplayName(profile)} size="sm" />
             ) : (
               <View style={styles.avatarInitial}>
                 <Text style={styles.avatarInitialText}>{initials}</Text>

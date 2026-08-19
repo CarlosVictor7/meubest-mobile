@@ -1,4 +1,5 @@
 import {
+  buildTrainingRequestPatch,
   canActAsListener,
   canRequestTraining,
   getListenerStatus,
@@ -82,6 +83,41 @@ describe('canRequestTraining', () => {
     for (const status of ['training_requested', 'in_training', 'under_review', 'approved', 'rejected'] as const) {
       expect(canRequestTraining({ listenerStatus: status })).toBe(false);
     }
+  });
+});
+
+describe('buildTrainingRequestPatch — idempotência da solicitação', () => {
+  const args = { uid: 'user-1', queueStamp: { sentinel: 'serverTimestamp' }, nowIso: '2026-08-19T12:00:00.000Z' };
+
+  it('monta o patch completo para quem nunca solicitou', () => {
+    expect(buildTrainingRequestPatch({}, args)).toEqual({
+      listenerStatus: 'training_requested',
+      listenerStatusUpdatedAt: '2026-08-19T12:00:00.000Z',
+      listenerTrainingRequestedAt: { sentinel: 'serverTimestamp' },
+      listenerStatusUpdatedBy: 'user-1',
+    });
+    expect(buildTrainingRequestPatch({ role: 'speaker' }, args)).not.toBeNull();
+    expect(buildTrainingRequestPatch({ listenerStatus: 'not_requested' }, args)).not.toBeNull();
+  });
+
+  it('devolve null para quem já entrou no ciclo — clique repetido = ZERO write', () => {
+    // O carimbo da fila (serverTimestamp) é write-once: qualquer status fora
+    // de not_requested significa que ele já existe e não pode ser regravado.
+    for (const status of ['training_requested', 'in_training', 'under_review', 'approved', 'rejected'] as const) {
+      expect(buildTrainingRequestPatch({ listenerStatus: status }, args)).toBeNull();
+    }
+  });
+
+  it('devolve null sem uid — nunca grava às cegas', () => {
+    expect(buildTrainingRequestPatch({}, { ...args, uid: null })).toBeNull();
+    expect(buildTrainingRequestPatch({}, { ...args, uid: undefined })).toBeNull();
+    expect(buildTrainingRequestPatch({}, { ...args, uid: '' })).toBeNull();
+  });
+
+  it('o carimbo da fila é o sentinela injetado, nunca um relógio local', () => {
+    const stamp = Symbol('serverTimestamp');
+    const patch = buildTrainingRequestPatch({}, { ...args, queueStamp: stamp });
+    expect(patch?.listenerTrainingRequestedAt).toBe(stamp);
   });
 });
 

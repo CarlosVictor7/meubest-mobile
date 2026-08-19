@@ -2,10 +2,18 @@ import React from 'react';
 import { View, Image, Text, StyleSheet, ViewStyle } from 'react-native';
 import { User } from 'lucide-react-native';
 import { colors, borderRadius } from '@constants/theme';
+import { getDisplayPhotoUrl, type ProfilePhotoSource } from '@shared/utils/profilePhoto';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 interface AvatarProps {
+  /**
+   * Perfil de onde derivar a foto (prioridade profilePhotoURL → photoURL).
+   * Preferido: call sites que passam o perfil refletem a foto enviada no
+   * Meu Best automaticamente.
+   */
+  profile?: ProfilePhotoSource | null;
+  /** URL direta (legado). Ignorada quando `profile` é fornecido. */
   photoURL?: string | null;
   name?: string;
   size?: AvatarSize;
@@ -21,8 +29,11 @@ const sizePx: Record<AvatarSize, number> = {
   xl: 100,
 };
 
-export function Avatar({ photoURL, name, size = 'md', style, isOnline }: AvatarProps) {
+export function Avatar({ profile, photoURL, name, size = 'md', style, isOnline }: AvatarProps) {
   const px = sizePx[size];
+  // Com `profile`, a prioridade é resolvida num lugar só (getDisplayPhotoUrl);
+  // `photoURL` solto continua funcionando para não quebrar call sites antigos.
+  const uri = profile !== undefined ? getDisplayPhotoUrl(profile) : photoURL ?? null;
   const initials = name
     ? name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
     : null;
@@ -43,8 +54,8 @@ export function Avatar({ photoURL, name, size = 'md', style, isOnline }: AvatarP
   return (
     <View style={{ position: 'relative' }}>
       <View style={containerStyle}>
-        {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: px, height: px }} />
+        {uri ? (
+          <Image source={{ uri }} style={{ width: px, height: px }} />
         ) : initials ? (
           <Text style={[styles.initials, { fontSize: px * 0.35, color: colors.primary }]}>
             {initials}
