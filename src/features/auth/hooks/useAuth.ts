@@ -2,6 +2,8 @@ import { useAuthStore } from '@shared/stores/authStore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@shared/services/firebase';
 import { doc, updateDoc, deleteField, deleteDoc } from 'firebase/firestore';
+import { runLogoutCleanup } from '../utils/logoutCleanup';
+import { clearPendingNotificationRoute } from '../../../navigation/notificationNavigation';
 
 /** Hook conveniente para acessar auth state — padrão igual à web */
 export function useAuth() {
@@ -14,20 +16,27 @@ export function useAuth() {
   const logout = async () => {
     try {
       if (user) {
-        // Limpa credenciais de push E derruba a presenca antes do signOut.
-        // Sem isOnline: false aqui, um acolhedor que sai do app continua
-        // aparecendo como disponivel e recebendo chamadas.
+        // Limpeza CRÍTICA antes do signOut: derruba a presença e desassocia o
+        // push token. A ordem importa — depois do signOut as Rules negariam a
+        // escrita (isOwner falha) e a conta ficaria "online" para sempre.
+        //
+        // A falha aqui NÃO é mais engolida: com retry esgotado, o logout
+        // falha visivelmente e o estado permanece coerente. Sair da conta
+        // deixando a push ativa é pior do que pedir para tentar de novo.
+        // A agenda (`availability`) NÃO é tocada: ela vale para o próximo login.
         const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          isOnline: false,
-          lastSeenAt: new Date().toISOString(),
-          pushToken: deleteField(),
-          pushTokenPlatform: deleteField(),
-          pushTokenUpdatedAt: deleteField(),
-        }).catch((e) => {
-          console.warn('[useAuth] Falha ao limpar presenca/push no Firestore durante logout:', e);
+        await runLogoutCleanup(async () => {
+          await updateDoc(userRef, {
+            isOnline: false,
+            lastSeenAt: new Date().toISOString(),
+            pushToken: deleteField(),
+            pushTokenPlatform: deleteField(),
+            pushTokenUpdatedAt: deleteField(),
+          });
         });
       }
+      // Intenção de navegação de push pendente morre com a sessão.
+      clearPendingNotificationRoute();
       await signOut(auth);
       useAuthStore.getState().clear();
     } catch (error) {

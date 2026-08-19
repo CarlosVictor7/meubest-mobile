@@ -160,8 +160,15 @@ export function ProfileScreen() {
           onPress: async () => {
             try {
               await logout();
-            } catch (error) {
-              Alert.alert('Erro', 'Não foi possível sair da conta.');
+            } catch (error: any) {
+              // LogoutCleanupError traz a explicação real (limpeza de push/presença
+              // não confirmada no servidor). Sem mensagem específica, cai no genérico.
+              Alert.alert(
+                'Erro',
+                error?.name === 'LogoutCleanupError' && error?.message
+                  ? error.message
+                  : 'Não foi possível sair da conta.'
+              );
             }
           }
         },
