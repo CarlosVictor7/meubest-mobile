@@ -8,17 +8,21 @@
  * │ Ver o cabeçalho de `../screens/ExploreScreen.tsx`.                          │
  * └─────────────────────────────────────────────────────────────────────────────┘
  *
- * Foto: `getDisplayPhotoUrl` (própria → provider → null). Sem foto ou com erro
- * de carregamento, o fundo vira o gradiente da marca com a inicial GRANDE.
- * O gradiente escuro inferior existe SEMPRE — é ele que garante a legibilidade
- * do texto branco tanto sobre foto quanto sobre o fundo claro da marca.
+ * Dados: recebe SÓ o DTO público (`PublicExploreProfile`) — nome já abreviado
+ * pelo servidor, sem nome completo, sem e-mail. `photos` são URLs assinadas de
+ * 1 h; a galeria (`ExplorePhotoGallery`) troca de foto por tap zones. Sem foto
+ * ou com todas falhando, o fundo vira o gradiente da marca com a inicial
+ * GRANDE. O gradiente escuro inferior existe SEMPRE — é ele que garante a
+ * legibilidade do texto branco tanto sobre foto quanto sobre o fundo claro.
+ *
+ * Z-order (de baixo para cima): galeria + tap zones → gradiente (sem toque) →
+ * bloco de conteúdo com os botões. Um toque no rodapé nunca chega à galeria.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Image,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
@@ -26,51 +30,78 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, MessageCircle, Calendar } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-import { getDisplayName, getInitial } from '@shared/utils/displayName';
-import { getDisplayPhotoUrl } from '@shared/utils/profilePhoto';
-import type { ExploreCandidate } from '../utils/exploreFilters';
+import type { PublicExploreProfile } from '../types';
 import {
   formatAgeRange,
   formatLocation,
   getThemeChips,
 } from '../utils/exploreView';
+import { ExplorePhotoGallery } from './ExplorePhotoGallery';
 
 interface ProfilePagerCardProps {
-  listener: ExploreCandidate;
+  profile: PublicExploreProfile;
   /** Largura da página (= largura da janela) — exigida pelo pagingEnabled. */
   width: number;
-  /** CTA "FALAR AGORA" habilitado? (isListenerPushEligibleNow, decidido na tela) */
+  /** CTA "FALAR AGORA" habilitado? (`reachable`, decidido pelo servidor) */
   canTalkNow: boolean;
   /** Presença fresca — o pontinho "Ativo agora". */
   liveNow: boolean;
-  onTalkNow: (listener: ExploreCandidate) => void;
-  onSchedule: (listener: ExploreCandidate) => void;
+  onTalkNow?: (profile: PublicExploreProfile) => void;
+  onSchedule?: (profile: PublicExploreProfile) => void;
+  /**
+   * Prévia do PRÓPRIO perfil: os botões de ação ficam desabilitados (a pessoa
+   * não chama a si mesma) e os indicadores sobem, pois não há pill "N de M".
+   */
+  previewMode?: boolean;
+  /** Índice da foto visível — a tela usa para o prefetch da próxima. */
+  onPhotoIndexChange?: (index: number) => void;
 }
 
 /** Linhas da bio quando recolhida / teto quando expandida. */
 const BIO_COLLAPSED_LINES = 3;
 const BIO_EXPANDED_MAX_HEIGHT = 8 * 20; // ~8 linhas de lineHeight 20
 
+/**
+ * Altura reservada no topo do card para a pill "N de M" da tela (top 8 +
+ * ~24 de pill + folga). Os indicadores de foto entram logo abaixo dela.
+ */
+const INDICATORS_TOP_WITH_PILL = spacing.sm + 24 + spacing.sm;
+const INDICATORS_TOP_PLAIN = spacing.md;
+
 export function ProfilePagerCard({
-  listener,
+  profile,
   width,
   canTalkNow,
   liveNow,
   onTalkNow,
   onSchedule,
+  previewMode = false,
+  onPhotoIndexChange,
 }: ProfilePagerCardProps) {
-  const [photoFailed, setPhotoFailed] = useState(false);
-  const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [galleryFailed, setGalleryFailed] = useState(false);
   const [bioExpanded, setBioExpanded] = useState(false);
 
-  const name = getDisplayName(listener, 'Acolhedor');
-  const photoUrl = getDisplayPhotoUrl(listener);
-  const showPhoto = Boolean(photoUrl) && !photoFailed;
+  // Perfil trocou (FlatList recicla o componente) → reseta o estado local.
+  useEffect(() => {
+    setGalleryFailed(false);
+    setBioExpanded(false);
+  }, [profile.uid]);
 
-  const age = formatAgeRange(listener.ageRange);
-  const place = formatLocation(listener.city, listener.state);
-  const bio = typeof listener.bio === 'string' ? listener.bio.trim() : '';
-  const { chips, extra } = getThemeChips(listener.interests);
+  const name = profile.publicName || 'Acolhedor(a)';
+  const initial = (profile.initial || name.charAt(0) || 'A').toUpperCase();
+  const photos = Array.isArray(profile.photos) ? profile.photos : [];
+  const showGallery = photos.length > 0 && !galleryFailed;
+
+  const age = formatAgeRange(profile.ageRange);
+  const place = formatLocation(profile.city, profile.state);
+  const bio = typeof profile.bio === 'string' ? profile.bio.trim() : '';
+  const { chips, extra } = getThemeChips(profile.interests);
+
+  const actionsEnabled = !previewMode;
+  const talkEnabled = actionsEnabled && canTalkNow && Boolean(onTalkNow);
+  const scheduleEnabled = actionsEnabled && Boolean(onSchedule);
+
+  const handleAllFailed = useCallback(() => setGalleryFailed(true), []);
 
   const press = useCallback(
     (fn: () => void) => () => {
@@ -83,27 +114,21 @@ export function ProfilePagerCard({
   return (
     <View style={[styles.page, { width }]}>
       <View style={[styles.card, shadows.md]}>
-        {/* ── Fundo: foto ou marca ──────────────────────────────────────── */}
-        {showPhoto ? (
-          <>
-            {/* Placeholder neutro visível enquanto a foto carrega. */}
-            {!photoLoaded && <View style={styles.photoPlaceholder} />}
-            <Image
-              source={{ uri: photoUrl as string }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              onLoad={() => setPhotoLoaded(true)}
-              onError={() => setPhotoFailed(true)}
-              accessibilityIgnoresInvertColors
-            />
-          </>
+        {/* ── Fundo: galeria ou marca ───────────────────────────────────── */}
+        {showGallery ? (
+          <ExplorePhotoGallery
+            photos={photos}
+            indicatorsTop={previewMode ? INDICATORS_TOP_PLAIN : INDICATORS_TOP_WITH_PILL}
+            onAllFailed={handleAllFailed}
+            onIndexChange={onPhotoIndexChange}
+          />
         ) : (
           <LinearGradient
             colors={[colors.primaryLight, '#F6C9CD']}
             style={StyleSheet.absoluteFill}
           >
             <View style={styles.initialWrap}>
-              <Text style={styles.initialText}>{getInitial(listener)}</Text>
+              <Text style={styles.initialText}>{initial}</Text>
             </View>
           </LinearGradient>
         )}
@@ -116,7 +141,7 @@ export function ProfilePagerCard({
           pointerEvents="none"
         />
 
-        {/* ── Conteúdo sobre o gradiente ────────────────────────────────── */}
+        {/* ── Conteúdo sobre o gradiente (acima das tap zones) ──────────── */}
         <View style={styles.content}>
           {canTalkNow && (
             <View style={styles.badgeRow}>
@@ -195,22 +220,24 @@ export function ProfilePagerCard({
             </View>
           )}
 
-          {!canTalkNow && (
+          {!canTalkNow && !previewMode && (
             <Text style={styles.unavailableHint}>Indisponível para chamada agora</Text>
           )}
 
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.btn, styles.btnPrimary, !canTalkNow && styles.btnDisabled]}
-              onPress={canTalkNow ? press(() => onTalkNow(listener)) : undefined}
-              disabled={!canTalkNow}
+              style={[styles.btn, styles.btnPrimary, !talkEnabled && styles.btnDisabled]}
+              onPress={talkEnabled && onTalkNow ? press(() => onTalkNow(profile)) : undefined}
+              disabled={!talkEnabled}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityState={{ disabled: !canTalkNow }}
+              accessibilityState={{ disabled: !talkEnabled }}
               accessibilityLabel={
-                canTalkNow
-                  ? `Falar agora com ${name}`
-                  : `${name} está indisponível para chamada agora`
+                previewMode
+                  ? 'Falar agora (desativado na prévia)'
+                  : canTalkNow
+                    ? `Falar agora com ${name}`
+                    : `${name} está indisponível para chamada agora`
               }
             >
               <MessageCircle size={16} color="#FFF" strokeWidth={2.4} />
@@ -218,11 +245,17 @@ export function ProfilePagerCard({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.btn, styles.btnSecondary]}
-              onPress={press(() => onSchedule(listener))}
+              style={[styles.btn, styles.btnSecondary, !scheduleEnabled && styles.btnDisabled]}
+              onPress={scheduleEnabled && onSchedule ? press(() => onSchedule(profile)) : undefined}
+              disabled={!scheduleEnabled}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel={`Agendar uma conversa com ${name}`}
+              accessibilityState={{ disabled: !scheduleEnabled }}
+              accessibilityLabel={
+                previewMode
+                  ? 'Agendar (desativado na prévia)'
+                  : `Agendar uma conversa com ${name}`
+              }
             >
               <Calendar size={16} color="#FFF" strokeWidth={2.4} />
               <Text style={styles.btnSecondaryText}>AGENDAR</Text>
@@ -246,10 +279,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
     backgroundColor: colors.primaryLight,
-  },
-  photoPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.surfaceAlt,
   },
   initialWrap: {
     flex: 1,
@@ -364,7 +393,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 6,
   },
   btnPrimary: { backgroundColor: colors.primary, ...shadows.primary },
-  btnDisabled: { backgroundColor: 'rgba(255,255,255,0.25)', shadowOpacity: 0, elevation: 0 },
+  btnDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.25)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   btnPrimaryText: {
     color: '#FFF',
     fontSize: typography.size.xs,

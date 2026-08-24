@@ -4,11 +4,9 @@
  * Funções puras, sem React: é aqui que os testes garantem que o CTA "FALAR
  * AGORA" habilita pelos critérios certos e que os textos do card não regridem.
  */
-import { isListenerPushEligibleNow } from '@shared/utils/availability';
-import type { AvailabilitySource } from '@shared/utils/availability';
-import { isAvailableNow } from '@shared/utils/presence';
 import { SESSION_THEMES } from '@constants/config';
 import type { ExploreFilters } from './exploreFilters';
+import type { PublicExploreProfile } from '../types';
 
 /** Quantos chips de tema o card mostra antes do "+N". */
 export const MAX_THEME_CHIPS = 3;
@@ -47,22 +45,25 @@ export function formatExploreProgress(index: number, total: number): string {
 
 export interface TalkNowAvailability {
   /**
-   * O CTA "FALAR AGORA" habilita? Reusa `isListenerPushEligibleNow`:
-   * canActAsListener ∧ (opt-in manual ∨ agenda programada agora). É o mesmo
-   * critério da push — se a chamada pode chegar, o botão pode chamar.
+   * O CTA "FALAR AGORA" habilita? Vem pronto do servidor (`reachable`):
+   * aprovado E (opt-in manual OU agenda programada agora) — o mesmo critério
+   * da push. Se a chamada pode chegar, o botão pode chamar.
    */
   canTalkNow: boolean;
-  /** Presença fresca (chave ligada + lastSeenAt recente) — o pontinho "Ativo agora". */
+  /** Presença fresca (`liveNow`) — o pontinho "Ativo agora". */
   liveNow: boolean;
 }
 
+/**
+ * Lê `reachable`/`liveNow` do DTO público. Tolerante a perfil nulo e a
+ * campos ausentes (API antiga): ausência é "indisponível".
+ */
 export function getTalkNowAvailability(
-  profile: AvailabilitySource | null | undefined,
-  nowMs: number = Date.now()
+  profile: Pick<PublicExploreProfile, 'reachable' | 'liveNow'> | null | undefined
 ): TalkNowAvailability {
   return {
-    canTalkNow: isListenerPushEligibleNow(profile, new Date(nowMs)),
-    liveNow: isAvailableNow(profile, nowMs),
+    canTalkNow: profile?.reachable === true,
+    liveNow: profile?.liveNow === true,
   };
 }
 
@@ -103,6 +104,8 @@ export function countActiveFilters(filters: ExploreFilters): number {
   if (filters.search?.trim()) count++;
   if (filters.state) count++;
   if (filters.themeId) count++;
+  if (filters.religion) count++;
+  if (filters.ageRange) count++;
   if (filters.onlyOnline) count++;
   return count;
 }

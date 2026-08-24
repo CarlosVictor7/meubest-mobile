@@ -14,15 +14,19 @@
  * │ botões: FALAR AGORA e AGENDAR.                                              │
  * └─────────────────────────────────────────────────────────────────────────────┘
  *
- * Dados: query paginada por cursor (`fetchListenersPage`, getDocs one-shot,
- * 12 por página, SEM orderBy — ver `services/exploreQuery.ts`). Navegar dentro
- * das páginas carregadas custa ZERO reads; a próxima página é prefetchada
- * quando faltam 3 cards para o fim. Filtros continuam client-side, sobre o que
- * já foi baixado (`buildExploreList`), com autofill limitado a 5 páginas.
+ * Dados: `GET /explore/listeners` paginado por offset (`fetchListenersPage`,
+ * 12 por página). Visibilidade E filtros são do servidor — o app recebe só o
+ * DTO público (`PublicExploreProfile`), com nome já abreviado e fotos em URLs
+ * assinadas de 1 h. Navegar dentro das páginas carregadas não chama a API; a
+ * próxima página é prefetchada quando faltam 3 cards para o fim. ZERO polling:
+ * refetch só no refresh manual, na mudança de filtro e na paginação.
  *
- * Fica no HomeStack, não como quinta aba: o BottomNav já tem 4 abas no Android
- * e 3 no iOS mais o botão central, e uma quinta estouraria o layout de
- * `half` + `centerGap`, aumentando a divergência entre plataformas.
+ * Fotos: a galeria do card troca por tap zones; a tela prefetcha (expo-image,
+ * cache em disco) a próxima foto do perfil visível e a primeira do seguinte.
+ *
+ * Onde vive: Android → rota do HomeStack (card da Home); iOS → aba própria
+ * (`ExploreTab`, no slot da Carteira). FALAR AGORA/AGENDAR navegam para
+ * `HomeTab → MatchSearch/ScheduleMatch` nos dois casos.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -38,7 +42,10 @@ import {
   type ViewToken,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Image } from 'expo-image';
 import {
   ChevronLeft,
   ChevronRight,
@@ -50,11 +57,12 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
-import { getDisplayName } from '@shared/utils/displayName';
+import type { AppTabParamList, ExploreStackParamList } from '@navigation/types';
 import { ProfilePagerCard } from '../components/ProfilePagerCard';
 import { TalkThemeSheet } from '../components/TalkThemeSheet';
 import { ExploreFiltersSheet } from '../components/ExploreFiltersSheet';
-import { buildExploreList, type ExploreCandidate } from '../utils/exploreFilters';
+import type { ExploreAgeRange, PublicExploreProfile } from '../types';
+import type { ExploreFilters } from '../utils/exploreFilters';
 import {
   mergeExplorePages,
   shouldPrefetchNextPage,
@@ -65,118 +73,139 @@ import {
   formatExploreProgress,
   getTalkNowAvailability,
 } from '../utils/exploreView';
-import { fetchListenersPage, type ExploreCursor } from '../services/exploreQuery';
+import { getPhotoPrefetchUrls } from '../utils/exploreGallery';
+import { fetchListenersPage } from '../services/exploreQuery';
 import { createDirectedSession } from '../services/directedSession';
 
+/**
+ * A tela existe em dois lugares (HomeStack no Android, ExploreStack no iOS);
+ * ambos têm a rota `Explore: undefined`, e as ações saem sempre pela aba Home.
+ */
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<ExploreStackParamList, 'Explore'>,
+  BottomTabNavigationProp<AppTabParamList>
+>;
+
+/** Debounce da busca digitada — uma chamada à API por pausa, não por tecla. */
+const SEARCH_DEBOUNCE_MS = 350;
+
 export function ExploreScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<Nav>();
   const { user, profile } = useAuth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
   // ── Dados paginados ────────────────────────────────────────────────────────
-  const [docs, setDocs] = useState<ExploreCandidate[] | null>(null);
+  const [list, setList] = useState<PublicExploreProfile[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const cursorRef = useRef<ExploreCursor | null>(null);
+  const nextOffsetRef = useRef<number | null>(null);
   const hasMoreRef = useRef(false);
   const fetchingRef = useRef(false);
   const autoFillPagesRef = useRef(0);
+  /** Id da carga vigente — uma resposta atrasada de filtro antigo é descartada. */
+  const loadIdRef = useRef(0);
 
   // ── Filtros ────────────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [uf, setUf] = useState('');
   const [themeId, setThemeId] = useState('');
+  const [religion, setReligion] = useState('');
+  const [ageRange, setAgeRange] = useState<ExploreAgeRange | ''>('');
   const [onlyOnline, setOnlyOnline] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const filters = useMemo<ExploreFilters>(
+    () => ({ search: debouncedSearch, state: uf, themeId, religion, ageRange, onlyOnline }),
+    [debouncedSearch, uf, themeId, religion, ageRange, onlyOnline]
+  );
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
+  const activeFilterCount = countActiveFilters({ ...filters, search });
+
   // ── Pager / fluxos ─────────────────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [themeTarget, setThemeTarget] = useState<ExploreCandidate | null>(null);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [themeTarget, setThemeTarget] = useState<PublicExploreProfile | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
-  const listRef = useRef<FlatList<ExploreCandidate>>(null);
+  const listRef = useRef<FlatList<PublicExploreProfile>>(null);
 
   const load = useCallback(async () => {
-    if (fetchingRef.current) return;
+    const loadId = ++loadIdRef.current;
     fetchingRef.current = true;
     setLoadError(false);
-    setDocs(null);
+    setList(null);
     setCurrentIndex(0);
-    cursorRef.current = null;
+    setCurrentPhotoIndex(0);
+    nextOffsetRef.current = null;
     autoFillPagesRef.current = 0;
     try {
-      const page = await fetchListenersPage();
-      cursorRef.current = page.cursor;
+      const page = await fetchListenersPage({ filters: filtersRef.current, offset: 0 });
+      if (loadId !== loadIdRef.current) return;
+      nextOffsetRef.current = page.nextOffset;
       hasMoreRef.current = page.hasMore;
       setHasMore(page.hasMore);
-      setDocs(page.items);
+      setList(page.items);
     } catch (error) {
+      if (loadId !== loadIdRef.current) return;
       console.error('[Explore] Falha ao carregar acolhedores:', error);
       hasMoreRef.current = false;
       setHasMore(false);
-      setDocs([]);
+      setList([]);
       setLoadError(true);
     } finally {
-      fetchingRef.current = false;
+      if (loadId === loadIdRef.current) fetchingRef.current = false;
     }
   }, []);
 
   const loadMore = useCallback(async () => {
     if (fetchingRef.current || !hasMoreRef.current) return;
+    const offset = nextOffsetRef.current;
+    if (offset === null) return;
+    const loadId = loadIdRef.current;
     fetchingRef.current = true;
     setLoadingMore(true);
     try {
-      const page = await fetchListenersPage({ cursor: cursorRef.current });
-      cursorRef.current = page.cursor;
+      const page = await fetchListenersPage({ filters: filtersRef.current, offset });
+      if (loadId !== loadIdRef.current) return;
+      nextOffsetRef.current = page.nextOffset;
       hasMoreRef.current = page.hasMore;
       setHasMore(page.hasMore);
-      setDocs((prev) => mergeExplorePages(prev ?? [], page.items));
+      setList((prev) => mergeExplorePages(prev ?? [], page.items));
     } catch (error) {
+      if (loadId !== loadIdRef.current) return;
       // Para de paginar em erro: sem isso, os effects de prefetch/autofill
       // tentariam de novo em loop. O refresh do header recomeça do zero.
       console.error('[Explore] Falha ao paginar acolhedores:', error);
       hasMoreRef.current = false;
       setHasMore(false);
     } finally {
-      fetchingRef.current = false;
-      setLoadingMore(false);
+      if (loadId === loadIdRef.current) {
+        fetchingRef.current = false;
+        setLoadingMore(false);
+      }
     }
   }, []);
 
+  // Primeiro load E toda mudança de filtro (server-side) recomeçam do zero.
   useEffect(() => {
-    load();
-  }, [load]);
-
-  const filters = useMemo(
-    () => ({ search, state: uf, themeId, onlyOnline }),
-    [search, uf, themeId, onlyOnline]
-  );
-
-  const list = useMemo(
-    () =>
-      buildExploreList(
-        docs,
-        { uid: user?.uid ?? '', blockedUserIds: profile?.blockedUserIds },
-        filters
-      ),
-    [docs, user?.uid, profile?.blockedUserIds, filters]
-  );
-
-  const activeFilterCount = countActiveFilters(filters);
-
-  // Filtro mudou: recomeça o pager e o orçamento de autofill.
-  useEffect(() => {
-    autoFillPagesRef.current = 0;
-    setCurrentIndex(0);
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [search, uf, themeId, onlyOnline]);
+    load();
+  }, [filters, load]);
 
-  // Autofill: com filtros ativos (ou visibilidade client-side removendo muita
-  // gente), continua paginando até a lista ter uma página — máx. 5 páginas.
+  // Autofill: se a API devolver uma página curta com `nextOffset`, completa
+  // até uma página — máx. 5 páginas por interação.
   useEffect(() => {
-    if (docs === null) return;
+    if (list === null) return;
     if (
       shouldAutoFillFilteredPage({
         filteredCount: list.length,
@@ -188,21 +217,31 @@ export function ExploreScreen() {
       autoFillPagesRef.current += 1;
       loadMore();
     }
-  }, [docs, list.length, hasMore, loadingMore, loadMore]);
+  }, [list, hasMore, loadingMore, loadMore]);
 
-  // Prefetch: quando a pessoa se aproxima do fim do que já foi carregado.
+  // Prefetch de PÁGINA: quando a pessoa se aproxima do fim do que já carregou.
   useEffect(() => {
     if (
       shouldPrefetchNextPage({
         currentIndex,
-        loadedCount: list.length,
+        loadedCount: list?.length ?? 0,
         hasMore,
         isFetching: fetchingRef.current,
       })
     ) {
       loadMore();
     }
-  }, [currentIndex, list.length, hasMore, loadingMore, loadMore]);
+  }, [currentIndex, list?.length, hasMore, loadingMore, loadMore]);
+
+  // Prefetch de FOTO: próxima do perfil visível + primeira do seguinte. Só isso.
+  useEffect(() => {
+    if (!list || list.length === 0) return;
+    const urls = getPhotoPrefetchUrls(list, currentIndex, currentPhotoIndex);
+    if (urls.length === 0) return;
+    Image.prefetch(urls, 'disk').catch(() => {
+      // Prefetch é oportunista — a foto carrega normalmente quando o card abrir.
+    });
+  }, [list, currentIndex, currentPhotoIndex]);
 
   // ── Navegação do pager ─────────────────────────────────────────────────────
   const onViewableItemsChanged = useRef(
@@ -210,22 +249,25 @@ export function ExploreScreen() {
       const first = viewableItems[0];
       if (first && typeof first.index === 'number') {
         setCurrentIndex(first.index);
+        setCurrentPhotoIndex(0);
       }
     }
   );
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
 
+  const total = list?.length ?? 0;
+
   const goToIndex = useCallback(
     (index: number) => {
-      if (index < 0 || index >= list.length) return;
+      if (index < 0 || index >= total) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       listRef.current?.scrollToIndex({ index, animated: true });
     },
-    [list.length]
+    [total]
   );
 
   const getItemLayout = useCallback(
-    (_data: ArrayLike<ExploreCandidate> | null | undefined, index: number) => ({
+    (_data: ArrayLike<PublicExploreProfile> | null | undefined, index: number) => ({
       length: width,
       offset: width * index,
       index,
@@ -235,13 +277,16 @@ export function ExploreScreen() {
 
   // ── Ações ──────────────────────────────────────────────────────────────────
   const handleSchedule = useCallback(
-    (listener: ExploreCandidate) => {
-      navigation.navigate('ScheduleMatch', {
-        rebook: {
-          sessionId: '',
-          speakerId: user?.uid ?? '',
-          listenerId: listener.id,
-          listenerName: getDisplayName(listener, 'Acolhedor'),
+    (listener: PublicExploreProfile) => {
+      navigation.navigate('HomeTab', {
+        screen: 'ScheduleMatch',
+        params: {
+          rebook: {
+            sessionId: '',
+            speakerId: user?.uid ?? '',
+            listenerId: listener.uid,
+            listenerName: listener.publicName,
+          },
         },
       });
     },
@@ -249,7 +294,7 @@ export function ExploreScreen() {
   );
 
   /** FALAR AGORA: primeiro a pessoa escolhe o TEMA — a categoria da sessão é dela. */
-  const handleTalkNow = useCallback((listener: ExploreCandidate) => {
+  const handleTalkNow = useCallback((listener: PublicExploreProfile) => {
     setThemeTarget(listener);
   }, []);
 
@@ -259,21 +304,24 @@ export function ExploreScreen() {
       setThemeTarget(null);
       if (!listener || !user) return;
 
-      setStarting(listener.id);
+      setStarting(listener.uid);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       try {
         const sessionId = await createDirectedSession({
           speakerUid: user.uid,
           speakerEmail: user.email,
           speakerProfile: profile ?? null,
-          listenerId: listener.id,
-          listenerName: getDisplayName(listener, 'Acolhedor'),
+          listenerId: listener.uid,
+          listenerName: listener.publicName,
           category,
         });
-        navigation.navigate('MatchSearch', {
-          category,
-          directedSessionId: sessionId,
-          listenerName: getDisplayName(listener, 'Acolhedor'),
+        navigation.navigate('HomeTab', {
+          screen: 'MatchSearch',
+          params: {
+            category,
+            directedSessionId: sessionId,
+            listenerName: listener.publicName,
+          },
         });
       } catch (error) {
         console.error('[Explore] Falha ao criar chamada direcionada:', error);
@@ -292,28 +340,34 @@ export function ExploreScreen() {
     setSearch('');
     setUf('');
     setThemeId('');
+    setReligion('');
+    setAgeRange('');
     setOnlyOnline(false);
   }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const loading = docs === null;
+  const loading = list === null;
   const bottomPad = insets.bottom + BOTTOM_NAV_SCROLL_PAD;
+  const canGoBack = navigation.canGoBack();
 
   const renderItem = useCallback(
-    ({ item }: { item: ExploreCandidate }) => {
+    ({ item, index }: { item: PublicExploreProfile; index: number }) => {
       const { canTalkNow, liveNow } = getTalkNowAvailability(item);
       return (
         <ProfilePagerCard
-          listener={item}
+          profile={item}
           width={width}
           canTalkNow={canTalkNow}
           liveNow={liveNow}
           onTalkNow={handleTalkNow}
           onSchedule={handleSchedule}
+          onPhotoIndexChange={
+            index === currentIndex ? setCurrentPhotoIndex : undefined
+          }
         />
       );
     },
-    [width, handleTalkNow, handleSchedule]
+    [width, handleTalkNow, handleSchedule, currentIndex]
   );
 
   return (
@@ -322,15 +376,17 @@ export function ExploreScreen() {
 
       <SafeAreaView edges={['top']} style={styles.safeTop}>
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.iconBtn}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-          >
-            <ChevronLeft size={22} color={colors.primary} strokeWidth={2.5} />
-          </TouchableOpacity>
+          {canGoBack && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.iconBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar"
+            >
+              <ChevronLeft size={22} color={colors.primary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          )}
 
           <Text style={styles.title}>EXPLORAR</Text>
 
@@ -380,7 +436,7 @@ export function ExploreScreen() {
             <Text style={styles.retryText}>TENTAR NOVAMENTE</Text>
           </TouchableOpacity>
         </View>
-      ) : list.length === 0 ? (
+      ) : total === 0 ? (
         <View style={[styles.stateWrap, { paddingBottom: bottomPad }]}>
           <Compass size={40} color={`${colors.primary}55`} strokeWidth={1.5} />
           <Text style={styles.stateText}>
@@ -412,8 +468,9 @@ export function ExploreScreen() {
           <FlatList
             ref={listRef}
             data={list}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.uid}
             renderItem={renderItem}
+            extraData={currentIndex}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -429,7 +486,7 @@ export function ExploreScreen() {
           {/* Indicador de posição — "3 de 12". */}
           <View style={styles.progressPill} pointerEvents="none">
             <Text style={styles.progressText}>
-              {formatExploreProgress(currentIndex, list.length)}
+              {formatExploreProgress(currentIndex, total)}
             </Text>
             {loadingMore && (
               <ActivityIndicator size="small" color="#FFF" style={styles.progressSpinner} />
@@ -448,7 +505,7 @@ export function ExploreScreen() {
               <ChevronLeft size={22} color={colors.primary} strokeWidth={2.6} />
             </TouchableOpacity>
           )}
-          {currentIndex < list.length - 1 && (
+          {currentIndex < total - 1 && (
             <TouchableOpacity
               style={[styles.navBtn, styles.navBtnRight]}
               onPress={() => goToIndex(currentIndex + 1)}
@@ -464,7 +521,7 @@ export function ExploreScreen() {
 
       <TalkThemeSheet
         visible={themeTarget !== null}
-        listenerName={getDisplayName(themeTarget, 'esta pessoa')}
+        listenerName={themeTarget?.publicName || 'esta pessoa'}
         onClose={() => setThemeTarget(null)}
         onSelect={handleThemeSelected}
       />
@@ -478,10 +535,14 @@ export function ExploreScreen() {
         onStateChange={setUf}
         themeId={themeId}
         onThemeChange={setThemeId}
+        religion={religion}
+        onReligionChange={setReligion}
+        ageRange={ageRange}
+        onAgeRangeChange={setAgeRange}
         onlyOnline={onlyOnline}
         onOnlyOnlineChange={setOnlyOnline}
         onClear={clearFilters}
-        resultCount={list.length}
+        resultCount={total}
         hasActiveFilters={activeFilterCount > 0}
       />
 

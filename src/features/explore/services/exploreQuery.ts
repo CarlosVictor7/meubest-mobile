@@ -1,87 +1,53 @@
 /**
- * exploreQuery — leitura PAGINADA por cursor dos acolhedores do Explorar.
+ * exploreQuery — leitura PAGINADA por offset dos acolhedores do Explorar.
  *
- * Sempre `getDocs` one-shot, NUNCA `onSnapshot`: o Explorar é navegação, não
- * monitoramento — um listener aberto numa coleção de usuários cobraria reads
- * a cada mudança de presença de qualquer acolhedor.
+ * Desde 24/08 o Explorar NÃO lê mais o Firestore: chama `GET /explore/listeners`
+ * na meubest-api, que decide visibilidade (aprovação, modo Acolher, bloqueio
+ * nos dois sentidos, consentimento de foto), aplica os filtros e devolve só o
+ * DTO público (`PublicExploreProfile`) com URLs de foto assinadas por 1 h.
  *
- * ┌── Por que a query NÃO tem `orderBy` ────────────────────────────────────────┐
- * │ Com `LISTENER_APPROVAL_ENFORCED` ligada a query terá DUAS igualdades        │
- * │ (role == 'listener' ∧ listenerStatus == 'approved'). Igualdade + igualdade  │
- * │ + orderBy('name') exigiria um índice composto (role+listenerStatus+name)    │
- * │ que NÃO pode ser criado neste projeto (permissão negada no console).        │
- * │                                                                             │
- * │ Sem orderBy, o Firestore serve as igualdades com merge de índices           │
- * │ single-field e ordena implicitamente por `__name__` (id do documento).      │
- * │ Essa ordem é estável, então `startAfter(ultimoDocumentSnapshot)` continua   │
- * │ funcionando como cursor. A ordem de EXIBIÇÃO (disponíveis primeiro, nome)   │
- * │ é aplicada client-side por `buildExploreList`, página a página.             │
- * └─────────────────────────────────────────────────────────────────────────────┘
- *
- * Flag de enforcement: com `LISTENER_APPROVAL_ENFORCED === false` (hoje) o
- * único WHERE é `role == 'listener'` — o que as Rules publicadas permitem
- * listar. Quando a flag ligar, `buildExploreQueryConstraintSpecs` acrescenta
- * `listenerStatus == 'approved'` automaticamente: a regra de leitura publicada
- * para o enforcement exige as duas igualdades para a query ser provável.
+ * Zero polling: a tela chama isto no primeiro load, no refresh manual, ao
+ * mudar filtro e ao paginar — nada mais.
  */
-import {
-  collection,
-  getDocs,
-  limit,
-  query,
-  startAfter,
-  where,
-  type DocumentData,
-  type QueryConstraint,
-  type QueryDocumentSnapshot,
-} from 'firebase/firestore';
-import { db } from '@shared/services/firebase';
-import {
-  buildExploreQueryConstraintSpecs,
-  EXPLORE_PAGE_SIZE,
-} from '../utils/explorePaging';
-import type { ExploreCandidate } from '../utils/exploreFilters';
-
-/** O cursor É o último DocumentSnapshot da página — exigência do startAfter sem orderBy. */
-export type ExploreCursor = QueryDocumentSnapshot<DocumentData>;
+import { api } from '@shared/services/api';
+import { getFirebaseIdToken } from '@shared/services/paymentService';
+import { EXPLORE_PAGE_SIZE } from '../utils/explorePaging';
+import { toExploreListenersParams, type ExploreFilters } from '../utils/exploreFilters';
+import type { PublicExploreProfile } from '../types';
 
 export interface ExplorePage {
-  items: ExploreCandidate[];
-  /** Cursor para a próxima página; null quando nada foi lido ainda. */
-  cursor: ExploreCursor | null;
-  /** Página cheia ⇒ provavelmente há mais. Página curta ⇒ acabou. */
+  items: PublicExploreProfile[];
+  /** Offset da próxima página; null quando o servidor diz que acabou. */
+  nextOffset: number | null;
   hasMore: boolean;
+  total: number;
 }
 
 export interface FetchListenersPageParams {
-  cursor?: ExploreCursor | null;
+  filters?: ExploreFilters;
+  offset?: number;
   pageSize?: number;
 }
 
-/** Specs puras → QueryConstraints reais. Testado via `buildExploreQueryConstraintSpecs`. */
-export function buildExploreQueryConstraints(): QueryConstraint[] {
-  return buildExploreQueryConstraintSpecs().map(([field, op, value]) =>
-    where(field, op, value)
-  );
-}
-
 export async function fetchListenersPage({
-  cursor = null,
+  filters = {},
+  offset = 0,
   pageSize = EXPLORE_PAGE_SIZE,
 }: FetchListenersPageParams = {}): Promise<ExplorePage> {
-  const constraints: QueryConstraint[] = [...buildExploreQueryConstraints()];
-  if (cursor) constraints.push(startAfter(cursor));
-  constraints.push(limit(pageSize));
+  const token = await getFirebaseIdToken();
+  const res = await api.getExploreListeners(token, {
+    ...toExploreListenersParams(filters),
+    limit: pageSize,
+    offset,
+  });
 
-  const snap = await getDocs(query(collection(db, 'users'), ...constraints));
-
-  const items = snap.docs.map(
-    (d) => ({ id: d.id, ...d.data() }) as ExploreCandidate
-  );
+  const items = Array.isArray(res.items) ? res.items : [];
+  const nextOffset = typeof res.nextOffset === 'number' ? res.nextOffset : null;
 
   return {
     items,
-    cursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : cursor,
-    hasMore: snap.docs.length === pageSize,
+    nextOffset,
+    hasMore: nextOffset !== null,
+    total: typeof res.total === 'number' ? res.total : items.length,
   };
 }

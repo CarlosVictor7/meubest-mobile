@@ -1,4 +1,10 @@
 import { appConfig } from '@constants/appConfig';
+import type {
+  ExploreListenersParams,
+  ExploreListenersResponse,
+  ExploreMeResponse,
+} from '@features/explore/types';
+import { buildExploreQueryString } from '@features/explore/utils/exploreQueryString';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -81,4 +87,14 @@ export const api = {
       '/listener/queue-position',
       { token }
     ),
+
+  // ─── Explorar (perfis públicos; visibilidade decidida no servidor) ───────
+  /** Lista paginada por offset. Filtros vazios são omitidos da query. */
+  getExploreListeners: (token: string, params: ExploreListenersParams = {}) =>
+    request<ExploreListenersResponse>(
+      `/explore/listeners${buildExploreQueryString(params)}`,
+      { token }
+    ),
+  /** O próprio perfil como terceiros o veem + estado de visibilidade. */
+  getExploreMe: (token: string) => request<ExploreMeResponse>('/explore/me', { token }),
 };
