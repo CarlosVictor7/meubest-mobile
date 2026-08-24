@@ -25,9 +25,14 @@ import {
   Lock,
   Trash2,
   Camera,
+  Compass,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { ProfileStackParamList } from '@navigation/types';
 import { useAuth } from '@features/auth/hooks/useAuth';
+import { ExplorePhotoManager } from '@features/profile/components/ExplorePhotoManager';
 import { TabHeader } from '@shared/components/TabHeader';
 import { Avatar, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import {
@@ -43,7 +48,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getDisplayName, BIO_MAX_LENGTH, PREFERRED_NAME_MAX_LENGTH } from '@shared/utils/displayName';
 
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { TIP_FEE_MESSAGE } from '@shared/constants/fees';
 
@@ -61,6 +66,7 @@ const TOPICS = [
 
 export function ProfileScreen() {
   const { user, profile, logout, deleteAccount } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
 
 
   // Estados locais para edição
@@ -75,6 +81,10 @@ export function ProfileScreen() {
   // Foto: pick → process → upload acontecem juntos; o onSnapshot do AuthProvider
   // atualiza `profile` e a UI reflete sozinha — nenhum estado local de URL.
   const [photoBusy, setPhotoBusy] = useState(false);
+  // Consentimento do Explorar: grava na hora (1 write por toque), sem passar
+  // pelo SALVAR. O valor exibido vem do `profile` (snapshot) — nada local.
+  const [exploreConsentBusy, setExploreConsentBusy] = useState(false);
+  const showPhotoInExplore = profile?.showPhotoInExplore === true;
 
 
   // Inicializa dados do usuário a partir do Firestore
@@ -110,6 +120,21 @@ export function ProfileScreen() {
   const toggleNotifications = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEmailNotifications((prev) => !prev);
+  };
+
+  const toggleShowPhotoInExplore = async () => {
+    const uid = user?.uid;
+    if (!uid || exploreConsentBusy) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExploreConsentBusy(true);
+    try {
+      await updateDoc(doc(db, 'users', uid), { showPhotoInExplore: !showPhotoInExplore });
+    } catch (error) {
+      console.error('[ProfileScreen] Erro ao salvar consentimento do Explorar:', error);
+      Alert.alert('Erro', 'Não foi possível salvar sua preferência agora.');
+    } finally {
+      setExploreConsentBusy(false);
+    }
   };
 
   const handleChangePhoto = async () => {
@@ -426,6 +451,16 @@ export function ProfileScreen() {
               </View>
             </View>
 
+            {/* ─── FOTOS DO MEU PERFIL (Explorar) ────────────────────── */}
+            {!!user?.uid && (
+              <ExplorePhotoManager
+                uid={user.uid}
+                explorePhotos={profile?.explorePhotos}
+                explorePrimaryPhotoSlot={profile?.explorePrimaryPhotoSlot}
+                onOpenPreview={() => navigation.navigate('ExplorePreview')}
+              />
+            )}
+
             {/* ─── DADOS PARA RECEBIMENTO ───────────────────────── */}
             {/* Oculto no iOS (Apple Guideline 1.1.4 — sem financeiro) */}
             {FINANCIAL_FEATURES_ENABLED && (
@@ -490,6 +525,34 @@ export function ProfileScreen() {
               <View style={styles.sectionHeader}>
                 <Bell size={20} color={colors.primary} strokeWidth={2.5} />
                 <Text style={styles.sectionTitle}>PREFERÊNCIAS</Text>
+              </View>
+
+              {/* Consentimento: write imediato (não depende do SALVAR). */}
+              <View style={styles.preferenceCard}>
+                <View style={styles.preferenceIconWrap}>
+                  <Compass size={18} color={colors.primary} strokeWidth={2.5} />
+                </View>
+                <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceTitle}>EXIBIR MINHAS FOTOS NO EXPLORAR</Text>
+                  <Text style={styles.preferenceDesc}>
+                    Quando ativado, suas fotos selecionadas poderão aparecer no seu perfil público do Explorar.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={toggleShowPhotoInExplore}
+                  disabled={exploreConsentBusy}
+                  style={[styles.toggleOuter, showPhotoInExplore && styles.toggleOuterActive]}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: showPhotoInExplore, disabled: exploreConsentBusy }}
+                  accessibilityLabel="Exibir minhas fotos no Explorar"
+                >
+                  {exploreConsentBusy ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <View style={[styles.toggleInner, showPhotoInExplore && styles.toggleInnerActive]} />
+                  )}
+                </TouchableOpacity>
               </View>
 
               <View style={styles.preferenceCard}>
@@ -825,6 +888,14 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     gap: spacing.md,
+  },
+  preferenceIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   preferenceTextWrap: {
     flex: 1,
