@@ -133,6 +133,13 @@ export function ProfilePagerCard({
           </LinearGradient>
         )}
 
+        {/* ── Scrim superior: indicadores e pill legíveis sobre foto clara ── */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.42)', 'transparent']}
+          style={styles.topShade}
+          pointerEvents="none"
+        />
+
         {/* ── Gradiente de legibilidade no terço inferior ───────────────── */}
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0.88)']}
@@ -298,6 +305,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: '55%',
+  },
+  topShade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: '14%',
   },
   content: {
     position: 'absolute',
