@@ -90,3 +90,47 @@ export function getInitial(profile: NameSource | null | undefined): string {
 export function suggestPreferredName(profile: NameSource | null | undefined): string {
   return getFirstName(profile, '');
 }
+
+// ─── Nome PÚBLICO (privacidade entre usuários) ───────────────────────────────
+
+/**
+ * Partículas que nunca viram "sobrenome" na abreviação: "João de Souza" é
+ * "João S.", não "João D.".
+ */
+const NAME_PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+export const PUBLIC_NAME_FALLBACK = 'Acolhedor(a)';
+
+/**
+ * Nome como OUTROS usuários veem: primeiro nome + inicial do último sobrenome.
+ *
+ *   Bárbara Oliveira        → Bárbara O.
+ *   Carlos Victor Farias    → Carlos F.
+ *   Ana Rita Santana Cruz   → Ana C.
+ *   João de Souza           → João S.
+ *   Carlos+Victor Farias    → Carlos F.   (legado com '+')
+ *   Madonna                 → Madonna
+ *
+ * Fonte: `preferredName` → `name` normalizado → fallback. Nunca e-mail.
+ * Regra de privacidade do produto: nome completo NUNCA aparece em superfície
+ * user-to-user (Explorar, sessão, Jitsi, agendamento, notificações).
+ * Determinística e pura — espelhada em meubest-api (publicName.ts).
+ */
+export function getPublicExploreName(
+  profile: NameSource | null | undefined,
+  fallback: string = PUBLIC_NAME_FALLBACK
+): string {
+  const full = getDisplayName(profile, '');
+  const tokens = normalizeLegacyName(full).split(' ').filter(Boolean);
+  if (tokens.length === 0) return fallback;
+  if (tokens.length === 1) return tokens[0];
+
+  const first = tokens[0];
+  for (let i = tokens.length - 1; i >= 1; i--) {
+    const t = tokens[i];
+    if (NAME_PARTICLES.has(t.toLowerCase())) continue;
+    const initial = t.charAt(0).toUpperCase();
+    return initial ? `${first} ${initial}.` : first;
+  }
+  return first;
+}

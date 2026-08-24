@@ -3,6 +3,7 @@ import {
   filterHistory,
   filterUpcoming,
   getCounterpart,
+  publicCounterpartName,
   toMillis,
 } from '../sessionFilters';
 import { isUpcomingSession } from '../sessionWindow';
@@ -176,5 +177,32 @@ describe('getCounterpart', () => {
   it('tolera sessão e uid ausentes', () => {
     expect(getCounterpart(null, 'u')).toBeNull();
     expect(getCounterpart(sessao, null)).toBeNull();
+  });
+
+  it('abrevia nome completo de sessão legada na leitura', () => {
+    const legada = { ...sessao, speakerName: 'Ana Rita Santana Cruz', listenerName: 'João de Souza' };
+    expect(getCounterpart(legada, 'u-speaker')?.name).toBe('João S.');
+    expect(getCounterpart(legada, 'u-listener')?.name).toBe('Ana C.');
+  });
+});
+
+describe('publicCounterpartName', () => {
+  const sessao = {
+    id: 's1',
+    speakerId: 'u-speaker',
+    listenerId: 'u-listener',
+    speakerName: 'Carlos Victor Farias',
+    listenerName: 'Bárbara Oliveira',
+  };
+
+  it('devolve o nome público da contraparte', () => {
+    expect(publicCounterpartName(sessao, 'u-speaker')).toBe('Bárbara O.');
+    expect(publicCounterpartName(sessao, 'u-listener')).toBe('Carlos F.');
+  });
+
+  it('usa fallback sem contraparte', () => {
+    expect(publicCounterpartName({ ...sessao, listenerId: null }, 'u-speaker')).toBe('Apoiador');
+    expect(publicCounterpartName(sessao, 'u-outro', 'Alguém')).toBe('Alguém');
+    expect(publicCounterpartName(null, 'u')).toBe('Apoiador');
   });
 });

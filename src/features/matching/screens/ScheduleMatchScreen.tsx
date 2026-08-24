@@ -37,7 +37,7 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { SESSION_THEMES } from '@constants/config';
-import { getDisplayName, getInitial } from '@shared/utils/displayName';
+import { getDisplayName, getInitial, getPublicExploreName } from '@shared/utils/displayName';
 import { canActAsListener } from '@shared/utils/listener';
 import { localDateKey } from '@shared/utils/availability';
 import { DayStrip } from '../components/DayStrip';
@@ -216,11 +216,12 @@ export function ScheduleMatchScreen() {
       const sessionData = {
         speakerId: user.uid,
         speakerEmail: user.email || '',
-        speakerName: getDisplayName(profile, user.displayName || 'Usuário'),
+        // Nomes PÚBLICOS ("Ana S.") — a sessão é lida pelo outro participante.
+        speakerName: getPublicExploreName(profile, 'Usuário'),
         listenerId: bookingMode === 'specific' ? selectedVolunteer.id : null,
         listenerEmail: bookingMode === 'specific' ? (selectedVolunteer.email || null) : null,
         listenerName:
-          bookingMode === 'specific' ? getDisplayName(selectedVolunteer, 'Voluntário') : null,
+          bookingMode === 'specific' ? getPublicExploreName(selectedVolunteer, 'Voluntário') : null,
         status: 'pending',
         category: selectedTheme,
         duration: selectedDuration,
@@ -506,7 +507,7 @@ export function ScheduleMatchScreen() {
                       <Text style={styles.avatarInitials}>{initials}</Text>
                     </View>
                     <View style={styles.volunteerDetails}>
-                      <Text style={styles.volunteerName}>{getDisplayName(item, 'Voluntário')}</Text>
+                      <Text style={styles.volunteerName}>{getPublicExploreName(item, 'Voluntário')}</Text>
                       <Text style={styles.volunteerBio} numberOfLines={2}>
                         {item.bio || 'Voluntário atencioso disponível para ouvir você.'}
                       </Text>
@@ -556,7 +557,7 @@ export function ScheduleMatchScreen() {
                 </View>
                 <View>
                   <Text style={styles.smallVolunteerLabel}>VOLUNTÁRIO SELECIONADO</Text>
-                  <Text style={styles.smallVolunteerName}>{getDisplayName(selectedVolunteer, 'Voluntário')}</Text>
+                  <Text style={styles.smallVolunteerName}>{getPublicExploreName(selectedVolunteer, 'Voluntário')}</Text>
                 </View>
               </View>
             )}

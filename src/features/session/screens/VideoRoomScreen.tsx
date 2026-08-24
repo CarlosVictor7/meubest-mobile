@@ -35,7 +35,7 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius } from '@constants/theme';
 import { InCallTipModal } from '@features/session/components/InCallTipModal';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
-import { getFirstName } from '@shared/utils/displayName';
+import { getPublicExploreName } from '@shared/utils/displayName';
 
 // ─── JavaScript injetado na WebView — Bridge Jitsi → React Native ──────────
 // Detecta:
@@ -692,10 +692,10 @@ export function VideoRoomScreen() {
   const jitsiDomain = process.env.EXPO_PUBLIC_JITSI_DOMAIN ?? 'meet.jit.si';
   const jitsiBaseUrl = jitsiDomain.startsWith('http') ? jitsiDomain : `https://${jitsiDomain}`;
   const jitsiRoomName = session?.jitsiRoomName || `EscutaAtiva_${sessionId}`;
-  // Usar apenas o primeiro nome para evitar exibição de '%20' na interface do Jitsi.
-  // encodeURIComponent é aplicado somente no primeiro nome, sem espaços.
-  const firstName = getFirstName(profile, 'Usuário');
-  const displayName = encodeURIComponent(firstName);
+  // Nome PÚBLICO ("Ana S.") — nunca o nome completo para o outro participante.
+  // encodeURIComponent cuida do espaço; o Jitsi decodifica o userInfo.displayName.
+  const publicName = getPublicExploreName(profile, 'Usuário');
+  const displayName = encodeURIComponent(publicName);
   // config.startWithAudioMuted=false garante que o microfone não inicia mudo.
   // config.startWithVideoMuted=false garante que a câmera não inicia desligada.
   // interfaceConfig.SHOW_JITSI_WATERMARK=false oculta o logo do Jitsi via config da URL.

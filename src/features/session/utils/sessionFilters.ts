@@ -20,6 +20,8 @@
  * Funções puras, sem React nem Firebase.
  */
 
+import { getPublicExploreName } from '@shared/utils/displayName';
+
 export interface SessionLike {
   id: string;
   status?: string;
@@ -99,6 +101,10 @@ export function filterUpcoming(
 /**
  * A contraparte da sessão, do ponto de vista de quem está olhando.
  * Devolve `null` quando a sessão ainda não tem apoiador.
+ *
+ * Privacidade: `name` é SEMPRE o nome público ("Ana S."). Sessões legadas
+ * gravaram o nome completo em `speakerName`/`listenerName`; a abreviação
+ * acontece na leitura — nenhuma migração.
  */
 export function getCounterpart(
   session: SessionLike | null | undefined,
@@ -110,7 +116,7 @@ export function getCounterpart(
     if (!session.listenerId) return null;
     return {
       id: session.listenerId,
-      name: session.listenerName || 'Acolhedor',
+      name: getPublicExploreName({ name: session.listenerName }, 'Acolhedor'),
       role: 'listener',
     };
   }
@@ -119,10 +125,22 @@ export function getCounterpart(
     if (!session.speakerId) return null;
     return {
       id: session.speakerId,
-      name: session.speakerName || 'Pessoa acolhida',
+      name: getPublicExploreName({ name: session.speakerName }, 'Pessoa acolhida'),
       role: 'speaker',
     };
   }
 
   return null;
+}
+
+/**
+ * Nome PÚBLICO do outro participante, ou o fallback quando não há contraparte
+ * (sessão ainda sem apoiador / uid não participa).
+ */
+export function publicCounterpartName(
+  session: SessionLike | null | undefined,
+  uid: string | null | undefined,
+  fallback: string = 'Apoiador'
+): string {
+  return getCounterpart(session, uid)?.name ?? fallback;
 }
