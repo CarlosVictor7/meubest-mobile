@@ -41,7 +41,7 @@ import {
 } from '@shared/services/profilePhotoService';
 import { SelectSheet } from '@shared/components/SelectSheet';
 import { BR_STATES, CITIES_BY_UF } from '@constants/brazilLocations';
-import { RELIGION_OPTIONS, RELIGION_OTHER } from '@constants/religions';
+import { RELIGION_OPTIONS, RELIGION_OTHER, religionKeyFor } from '@constants/religions';
 import {
   suggestPreferredName,
   BIO_MAX_LENGTH,
@@ -101,6 +101,10 @@ export function ProfileFormScreen() {
   // Foto de perfil OPCIONAL. Fica só local (URI do picker) até o finalize:
   // o upload no Storage acontece junto da conclusão, quando o UID já existe
   // (a pessoa se autenticou com Google/Apple antes de chegar aqui).
+  // Consentimento do Explorar: opt-in explícito, default OFF. Gravado como
+  // `false` literal quando desligado — ausência e false são equivalentes na
+  // leitura, mas o write explícito registra que a pessoa viu a pergunta.
+  const [showPhotoInExplore, setShowPhotoInExplore] = useState(false);
   const [photo, setPhoto] = useState<{ uri: string; width?: number; height?: number } | null>(
     null
   );
@@ -219,6 +223,13 @@ export function ProfileFormScreen() {
         formData.religionChoice === RELIGION_OTHER
           ? formData.religionOther.trim() || null
           : formData.religionChoice || null;
+      // Chave estável para filtro no Explorar. Texto livre de "Outra" → 'outra'.
+      const religionKey =
+        formData.religionChoice === RELIGION_OTHER
+          ? religion
+            ? 'outra'
+            : null
+          : religionKeyFor(religion);
 
       const bio = formData.bio.trim();
 
@@ -259,6 +270,8 @@ export function ProfileFormScreen() {
           state: formData.state || null,
           city,
           religion,
+          religionKey,
+          showPhotoInExplore,
           interests: formData.interests,
           isAdult: true,
           isProfileComplete: true,
@@ -513,6 +526,29 @@ export function ProfileFormScreen() {
                     </View>
                   </View>
 
+                  {/* Consentimento do Explorar — opt-in, default OFF, não bloqueia. */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>QUER EXIBIR SUAS FOTOS NO EXPLORAR?</Text>
+                    <View style={styles.consentRow}>
+                      <Text style={styles.consentText}>
+                        Quando ativado, suas fotos selecionadas poderão aparecer no seu perfil público do Explorar.
+                      </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setShowPhotoInExplore((prev) => !prev);
+                        }}
+                        style={[styles.consentToggle, showPhotoInExplore && styles.consentToggleActive]}
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: showPhotoInExplore }}
+                        accessibilityLabel="Exibir minhas fotos no Explorar"
+                      >
+                        <View style={[styles.consentKnob, showPhotoInExplore && styles.consentKnobActive]} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
                   {/* Nome preferido — obrigatório no cadastro novo */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>COMO VOCÊ QUER SER CHAMADO?</Text>
@@ -631,9 +667,12 @@ export function ProfileFormScreen() {
                     />
                   </View>
 
-                  {/* Religião (Opcional) */}
+                  {/* Religião (Opcional) — só filtro no Explorar, nunca exibida. */}
                   <View style={styles.fieldBlock}>
                     <Text style={styles.fieldLabel}>RELIGIÃO / CRENÇA (OPCIONAL)</Text>
+                    <Text style={styles.fieldHelp}>
+                      Opcional. Pode ser usada como filtro de busca no Explorar — nunca é exibida no seu perfil.
+                    </Text>
                     <SelectSheet
                       value={formData.religionChoice}
                       onChange={(r) => setFormData((prev) => ({ ...prev, religionChoice: r }))}
@@ -985,6 +1024,52 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: 1,
     marginLeft: 4,
+  },
+  fieldHelp: {
+    fontSize: 11,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 16,
+    marginLeft: 4,
+    marginBottom: 2,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  consentText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 17,
+  },
+  consentToggle: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.borderDark,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  consentToggleActive: {
+    backgroundColor: colors.primary,
+  },
+  consentKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.surface,
+    alignSelf: 'flex-start',
+  },
+  consentKnobActive: {
+    alignSelf: 'flex-end',
   },
   chipsRow: {
     flexDirection: 'row',

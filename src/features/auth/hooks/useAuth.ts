@@ -3,7 +3,29 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '@shared/services/firebase';
 import { doc, updateDoc, deleteField, deleteDoc } from 'firebase/firestore';
 import { runLogoutCleanup } from '../utils/logoutCleanup';
+import { appConfig } from '@constants/appConfig';
 import { clearPendingNotificationRoute } from '../../../navigation/notificationNavigation';
+
+/**
+ * `DELETE {apiUrl}/me/photos` com Bearer idToken. Best-effort: qualquer falha
+ * (sem rede, API fora, 4xx/5xx) é apenas logada. `fetch` direto de propósito —
+ * é a única chamada que precisa sobreviver ao fluxo de exclusão da conta.
+ */
+async function deleteRemotePhotosBestEffort(): Promise<void> {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return;
+    const response = await fetch(`${appConfig.apiUrl}/me/photos`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) {
+      console.warn(`[useAuth] DELETE /me/photos respondeu ${response.status} (seguindo com a exclusão)`);
+    }
+  } catch (error) {
+    console.warn('[useAuth] DELETE /me/photos falhou (seguindo com a exclusão):', error);
+  }
+}
 
 /** Hook conveniente para acessar auth state — padrão igual à web */
 export function useAuth() {
@@ -59,6 +81,12 @@ export function useAuth() {
         (err as any).code = 'auth/requires-recent-login';
         throw err;
       }
+
+      // 0. Best-effort: pedir à API para apagar as fotos do Storage (avatar +
+      //    galeria do Explorar). Precisa acontecer ANTES do deleteDoc/delete()
+      //    porque depois não há mais idToken. Falha aqui NUNCA bloqueia a
+      //    exclusão — a conta some; um arquivo órfão é problema menor.
+      await deleteRemotePhotosBestEffort();
 
       // 1. Excluir o documento principal do usuário no Firestore (apaga perfil, disponibilidade, status)
       const userRef = doc(db, 'users', user.uid);
