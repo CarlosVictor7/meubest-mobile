@@ -4,6 +4,7 @@ import type { ProfileStackParamList } from './types';
 import { ProfileScreen } from '@features/profile/screens/ProfileScreen';
 import { GamificationScreen } from '@features/gamification/screens/GamificationScreen';
 import { RankingScreen } from '@features/gamification/screens/RankingScreen';
+import { ExplorePreviewScreen } from '@features/explore/screens/ExplorePreviewScreen';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
@@ -13,6 +14,7 @@ export function ProfileStack() {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Gamification" component={GamificationScreen} />
       <Stack.Screen name="Ranking" component={RankingScreen} />
+      <Stack.Screen name="ExplorePreview" component={ExplorePreviewScreen} />
     </Stack.Navigator>
   );
 }
