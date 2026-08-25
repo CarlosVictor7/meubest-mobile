@@ -17,11 +17,11 @@ module.exports = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: IS_DEV ? 'meu.best.dev' : 'meu.best',
-    buildNumber: '1.1.2',
+    buildNumber: '1.1.3',
     infoPlist: {
       NSCameraUsageDescription: 'Meu Best usa sua câmera para sessões de apoio em vídeo.',
       NSMicrophoneUsageDescription: 'Meu Best usa seu microfone para sessões de apoio em áudio/vídeo.',
-      NSPhotoLibraryUsageDescription: 'Meu Best usa sua galeria para você atualizar sua foto de perfil.',
+      NSPhotoLibraryUsageDescription: 'Meu Best usa sua galeria para você escolher sua foto de perfil e as fotos que decide exibir no Explorar.',
 
       ITSAppUsesNonExemptEncryption: false,
     },
