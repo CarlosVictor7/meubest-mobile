@@ -10,10 +10,10 @@
  * efeito, nunca em render. Zero writes em render.
  */
 import React, { useEffect, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -219,7 +219,14 @@ export function ExplorePhotoManager({
             {/* Thumbnail 9:16 */}
             <View style={[styles.thumb, !slotMeta && styles.thumbEmpty]}>
               {slotMeta && url ? (
-                <Image source={{ uri: url }} style={styles.thumbImage} resizeMode="cover" />
+                <ExpoImage
+                  source={{ uri: url }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                  transition={120}
+                  accessibilityLabel={`Foto ${slot}`}
+                />
               ) : slotMeta ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : (

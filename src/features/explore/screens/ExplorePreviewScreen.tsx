@@ -7,7 +7,8 @@
  * si mesma, mas precisa ver onde eles ficam.
  *
  * O banner no topo traduz `visibility.state` — por que o perfil está (ou não)
- * público — e o botão ATUALIZAR refaz a chamada. Sem polling.
+ * público — e o ícone de atualizar no header refaz a chamada. Sem polling.
+ * (O botão ATUALIZAR no rodapé foi removido no QA: colidia com o COMEÇAR.)
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -153,16 +154,6 @@ export function ExplorePreviewScreen() {
             {...getTalkNowAvailability(data.profile)}
             previewMode
           />
-          <TouchableOpacity
-            style={styles.updateBtn}
-            onPress={refresh}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="Atualizar prévia"
-          >
-            <RefreshCw size={14} color={colors.primary} strokeWidth={2.4} />
-            <Text style={styles.updateText}>ATUALIZAR</Text>
-          </TouchableOpacity>
         </View>
       )}
     </View>
