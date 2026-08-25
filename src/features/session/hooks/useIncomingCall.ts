@@ -34,7 +34,7 @@ import { db } from '@shared/services/firebase';
 import { SESSION_THEMES } from '@constants/config';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserProfile } from '@models/user';
-import { getDisplayName } from '@shared/utils/displayName';
+import { getPublicExploreName } from '@shared/utils/displayName';
 import { canActAsListener } from '@shared/utils/listener';
 
 export interface IncomingCallSession {
@@ -312,7 +312,8 @@ export function useIncomingCall(
           transaction.update(sessionRef, {
             listenerId: user.uid,
             listenerEmail: user.email ?? null,
-            listenerName: getDisplayName(profile, 'Apoiador'),
+            // Nome PÚBLICO ("Ana S."): a sessão é lida pela outra pessoa.
+            listenerName: getPublicExploreName(profile, 'Apoiador'),
             status: 'active',
             acceptedAt: serverTimestamp(),
           });

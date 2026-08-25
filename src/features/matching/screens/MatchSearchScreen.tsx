@@ -16,7 +16,7 @@ import { Compass, X, RefreshCw, Heart, Zap } from 'lucide-react-native';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
-import { getDisplayName } from '@shared/utils/displayName';
+import { getPublicExploreName } from '@shared/utils/displayName';
 
 // Frases motivacionais rotativas
 const COMFORT_PHRASES = [
@@ -115,7 +115,8 @@ export function MatchSearchScreen() {
       // Copia EXATAMENTE a estrutura de campos que o Web já usa em startImmediateSession
       const sessionData = {
         speakerId: user.uid,
-        speakerName: getDisplayName(profile, user.displayName || 'Usuário'),
+        // Nome PÚBLICO ("Ana S."): nunca o nome completo para o outro participante.
+        speakerName: getPublicExploreName(profile, 'Usuário'),
         speakerEmail: user.email || '',
         listenerId: null,
         listenerEmail: null,

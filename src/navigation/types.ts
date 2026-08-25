@@ -14,8 +14,16 @@ export type AuthStackParamList = {
 export type AppTabParamList = {
   HomeTab: NavigatorScreenParams<HomeStackParamList> | undefined;
   SessionsTab: NavigatorScreenParams<SessionsStackParamList> | undefined;
+  /** Android apenas (FINANCIAL_FEATURES_ENABLED). */
   WalletTab: undefined;
+  /** iOS apenas — ocupa o slot da Carteira no BottomNav (24/08). */
+  ExploreTab: undefined;
   ProfileTab: undefined;
+};
+
+// ─── Explore Stack (aba do iOS) ───────────────────────────────────
+export type ExploreStackParamList = {
+  Explore: undefined;
 };
 
 // ─── Home Stack ───────────────────────────────────────────────────
@@ -27,7 +35,10 @@ export type HomeStackParamList = {
     directedSessionId?: string;
     listenerName?: string;
   };
-  /** Descoberta de acolhedores. Rota do HomeStack, não uma quinta aba — ver ADR-006. */
+  /**
+   * Descoberta de acolhedores. No Android é rota do HomeStack (aberta pelo
+   * card da Home); no iOS a mesma tela vive na aba `ExploreTab` — ver ADR-006.
+   */
   Explore: undefined;
   ListenerProfile: { listenerId: string };
   /**
@@ -76,6 +87,8 @@ export type ProfileStackParamList = {
   EditProfile: undefined;
   Gamification: undefined;
   Ranking: undefined;
+  /** Prévia do próprio perfil como terceiros o veem no Explorar (24/08). */
+  ExplorePreview: undefined;
   Store: undefined;
   Settings: undefined;
 };

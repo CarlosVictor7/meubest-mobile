@@ -8,9 +8,6 @@ import {
   MAX_THEME_CHIPS,
 } from '../exploreView';
 
-const NOW = Date.parse('2026-08-18T15:00:00.000Z');
-const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
-
 describe('formatAgeRange', () => {
   it('troca hífen por en-dash e acrescenta "anos"', () => {
     expect(formatAgeRange('26-40')).toBe('26–40 anos');
@@ -61,59 +58,28 @@ describe('formatExploreProgress', () => {
 });
 
 describe('getTalkNowAvailability', () => {
-  it('opt-in manual ligado habilita o CTA', () => {
-    const r = getTalkNowAvailability(
-      { role: 'listener', listenerStatus: 'approved', isOnline: true, lastSeenAt: iso(60_000) },
-      NOW
-    );
+  // Desde 24/08 o critério (aprovado E opt-in manual OU agenda agora; presença
+  // fresca) é calculado no servidor e chega pronto no DTO público.
+  it('reachable + liveNow habilitam CTA e pontinho', () => {
+    const r = getTalkNowAvailability({ reachable: true, liveNow: true });
     expect(r.canTalkNow).toBe(true);
     expect(r.liveNow).toBe(true);
   });
 
-  it('quem não pode acolher nunca habilita', () => {
-    const r = getTalkNowAvailability(
-      { role: 'speaker', isOnline: true, lastSeenAt: iso(1000) },
-      NOW
-    );
-    expect(r.canTalkNow).toBe(false);
-  });
-
-  it('agenda ativa agora habilita mesmo com a chave desligada (regra da push)', () => {
-    // NOW é 15:00 UTC — a chave de data/hora local do runtime de teste (UTC).
-    const now = new Date(NOW);
-    const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const hourKey = `${String(now.getHours()).padStart(2, '0')}:00`;
-    const r = getTalkNowAvailability(
-      {
-        role: 'listener',
-        listenerStatus: 'approved',
-        isOnline: false,
-        availability: { [dateKey]: [hourKey] },
-      },
-      NOW
-    );
-    expect(r.canTalkNow).toBe(true);
-    // ...mas sem presença fresca declarada não há pontinho "Ativo agora".
-    expect(r.liveNow).toBe(false);
-  });
-
-  it('sem opt-in e sem agenda: CTA desabilitado', () => {
-    const r = getTalkNowAvailability({ role: 'listener', listenerStatus: 'approved', isOnline: false }, NOW);
-    expect(r.canTalkNow).toBe(false);
-    expect(r.liveNow).toBe(false);
-  });
-
-  it('presença obsoleta desliga o "Ativo agora" mas mantém o CTA (opt-in vale)', () => {
-    const r = getTalkNowAvailability(
-      { role: 'listener', listenerStatus: 'approved', isOnline: true, lastSeenAt: iso(60 * 60 * 1000) },
-      NOW
-    );
+  it('reachable sem presença fresca: CTA sim, "Ativo agora" não', () => {
+    const r = getTalkNowAvailability({ reachable: true, liveNow: false });
     expect(r.canTalkNow).toBe(true);
     expect(r.liveNow).toBe(false);
+  });
+
+  it('não reachable: CTA desabilitado mesmo com presença', () => {
+    const r = getTalkNowAvailability({ reachable: false, liveNow: true });
+    expect(r.canTalkNow).toBe(false);
+    expect(r.liveNow).toBe(true);
   });
 
   it('perfil nulo é indisponível', () => {
-    const r = getTalkNowAvailability(null, NOW);
+    const r = getTalkNowAvailability(null);
     expect(r.canTalkNow).toBe(false);
     expect(r.liveNow).toBe(false);
   });
@@ -146,6 +112,16 @@ describe('countActiveFilters', () => {
     expect(
       countActiveFilters({ search: 'ana', state: 'SP', themeId: 'luto', onlyOnline: true })
     ).toBe(4);
+    expect(
+      countActiveFilters({
+        search: 'ana',
+        state: 'SP',
+        themeId: 'luto',
+        religion: 'espirita',
+        ageRange: '26-40',
+        onlyOnline: true,
+      })
+    ).toBe(6);
   });
 
   it('busca só de espaços não conta', () => {

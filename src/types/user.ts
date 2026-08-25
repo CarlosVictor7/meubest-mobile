@@ -1,7 +1,23 @@
 // Core types shared across web and mobile
 // Ported from src/AuthContext.tsx in the web repo
 
+import type { ReligionKey } from '@constants/religions';
+
 export type UserRole = 'speaker' | 'listener' | 'admin';
+
+/** Slot da galeria do Explorar — no máximo 3 fotos por usuário. */
+export type ExplorePhotoSlot = 1 | 2 | 3;
+
+/**
+ * Metadata de UMA foto da galeria do Explorar.
+ * O path NUNCA é gravado: é derivado de `users/{uid}/explore/photo-{slot}.jpg`
+ * (ver `explorePhotoPath()` em `@shared/services/explorePhotoService`).
+ */
+export interface ExplorePhotoMeta {
+  slot: ExplorePhotoSlot;
+  /** Foto inativa continua no Storage mas não aparece para terceiros. */
+  active: boolean;
+}
 
 /**
  * Autorização para atuar como acolhedor.
@@ -134,4 +150,22 @@ export interface UserProfile {
    * profilePhotoURL → photoURL (provider, legado) → inicial do nome.
    */
   profilePhotoURL?: string;
+  // ── Explorar (galeria + consentimento) ─────────────────────────────
+  /**
+   * Consentimento para TERCEIROS verem as fotos no Explorar.
+   * Ausente = false (opt-in explícito). Não bloqueia cadastro.
+   */
+  showPhotoInExplore?: boolean;
+  /**
+   * Metadata da galeria do Explorar (≤ 3 entradas, slots únicos, ordenada).
+   * O path do arquivo é derivado do slot — nunca gravado aqui.
+   */
+  explorePhotos?: ExplorePhotoMeta[];
+  /** Slot da foto principal (exibida primeiro). Inativa/removida → primeira ativa. */
+  explorePrimaryPhotoSlot?: ExplorePhotoSlot;
+  /**
+   * Chave estável da religião (ver `religionKeyFor` em `@constants/religions`).
+   * Usada SÓ como filtro de busca no Explorar — nunca exibida no perfil.
+   */
+  religionKey?: ReligionKey;
 }

@@ -2,14 +2,14 @@
  * ExploreFiltersSheet — filtros do Explorar em bottom sheet.
  *
  * No redesign do pager fullscreen os filtros saíram da tela (roubavam altura
- * do card) e vieram para cá. A APLICAÇÃO continua client-side, sobre os docs
- * já paginados, via `buildExploreList` — este sheet só edita o estado.
+ * do card) e vieram para cá. A APLICAÇÃO é server-side (`GET /explore/listeners`)
+ * — este sheet só edita o estado; a tela refaz a busca quando ele muda.
  *
  * Os seletores de Estado e Tema reusam o `SelectSheet` compartilhado: o Modal
  * dele abre por cima deste Modal (RN empilha modais aninhados sem problema —
  * o SelectSheet é filho da hierarquia deste sheet).
  *
- * Mudança de filtro aplica na hora (custo zero — é filtro em memória); o botão
+ * Mudança de filtro aplica na hora (uma chamada à API por mudança); o botão
  * do rodapé só fecha, mostrando quantos resultados a pessoa vai encontrar.
  */
 import React from 'react';
@@ -21,6 +21,7 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,14 @@ import { SelectSheet } from '@shared/components/SelectSheet';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { BR_STATES } from '@constants/brazilLocations';
 import { SESSION_THEMES } from '@constants/config';
+import type { ExploreAgeRange } from '../types';
+import { EXPLORE_AGE_RANGES, EXPLORE_RELIGIONS } from '../utils/exploreReligions';
+
+/** O SelectSheet trabalha com string; só aceitamos os valores conhecidos. */
+function toAgeRange(value: string): ExploreAgeRange | '' {
+  const found = EXPLORE_AGE_RANGES.find((r) => r.value === value);
+  return found ? found.value : '';
+}
 
 interface ExploreFiltersSheetProps {
   visible: boolean;
@@ -41,6 +50,10 @@ interface ExploreFiltersSheetProps {
   onStateChange: (v: string) => void;
   themeId: string;
   onThemeChange: (v: string) => void;
+  religion: string;
+  onReligionChange: (v: string) => void;
+  ageRange: ExploreAgeRange | '';
+  onAgeRangeChange: (v: ExploreAgeRange | '') => void;
   onlyOnline: boolean;
   onOnlyOnlineChange: (v: boolean) => void;
 
@@ -61,6 +74,10 @@ export function ExploreFiltersSheet({
   onStateChange,
   themeId,
   onThemeChange,
+  religion,
+  onReligionChange,
+  ageRange,
+  onAgeRangeChange,
   onlyOnline,
   onOnlyOnlineChange,
   onClear,
@@ -110,6 +127,11 @@ export function ExploreFiltersSheet({
             </TouchableOpacity>
           </View>
 
+          <ScrollView
+            style={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           <View style={styles.searchBox}>
             <Search size={18} color={colors.textMutedValue} />
             <TextInput
@@ -158,6 +180,32 @@ export function ExploreFiltersSheet({
             searchable={false}
           />
 
+          <Text style={styles.fieldLabel}>RELIGIÃO</Text>
+          <SelectSheet
+            value={religion}
+            onChange={onReligionChange}
+            options={[
+              { value: '', label: 'Todas' },
+              ...EXPLORE_RELIGIONS.map((r) => ({ value: r.key, label: r.label })),
+            ]}
+            placeholder="Todas"
+            title="Filtrar por religião"
+            searchable={false}
+          />
+
+          <Text style={styles.fieldLabel}>FAIXA ETÁRIA</Text>
+          <SelectSheet
+            value={ageRange}
+            onChange={(v) => onAgeRangeChange(toAgeRange(v))}
+            options={[
+              { value: '', label: 'Todas' },
+              ...EXPLORE_AGE_RANGES.map((r) => ({ value: r.value, label: r.label })),
+            ]}
+            placeholder="Todas"
+            title="Filtrar por faixa etária"
+            searchable={false}
+          />
+
           <TouchableOpacity
             style={[styles.onlineToggle, onlyOnline && styles.onlineToggleActive]}
             onPress={() => {
@@ -176,6 +224,7 @@ export function ExploreFiltersSheet({
               SOMENTE DISPONÍVEIS AGORA
             </Text>
           </TouchableOpacity>
+          </ScrollView>
 
           <View style={styles.footer}>
             {hasActiveFilters && (
@@ -223,6 +272,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
   },
+  scroll: { flexGrow: 0 },
   handle: {
     width: 40,
     height: 5,

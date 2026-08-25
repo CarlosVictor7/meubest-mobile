@@ -7,13 +7,14 @@
  *   home      → HomeTab (HomeStack)
  *   sessions  → SessionsTab (SessionsStack)
  *   wallet    → WalletTab (WalletStack) — Android apenas
+ *   explore   → ExploreTab (ExploreStack) — iOS apenas (slot da Carteira)
  *   menu      → ProfileTab (ProfileStack)
  *
  * StartModal foi extraído para src/shared/components/StartModal/index.tsx
  * e é reutilizado aqui e na HomeScreen (card "Início Rápido").
  *
- * iOS: aba Carteira não é registrada (Guideline 1.1.4 Apple).
- * Android: comportamento completo mantido.
+ * iOS: aba Carteira não é registrada (Guideline 1.1.4 Apple); no lugar dela
+ * entra a aba Explorar. Android: comportamento completo mantido.
  */
 import React, { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
@@ -32,17 +33,20 @@ import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { HomeStack } from './HomeStack';
 import { SessionsStack } from './SessionsStack';
 import { WalletStack } from './WalletStack';
+import { ExploreStack } from './ExploreStack';
 import { ProfileStack } from './ProfileStack';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
 // ─── Mapeamento tab id → route name ────────────────────────────────
-// No iOS, 'wallet' não é registrada — o mapeamento ainda existe para
-// evitar erros de TypeScript, mas a aba nunca aparece no navigator.
+// 'wallet' (iOS) e 'explore' (Android) não são registradas na respectiva
+// plataforma — o mapeamento completo existe para o tipo fechar; a aba
+// ausente nunca aparece no navigator nem no BottomNav (`tabsForPlatform`).
 const TAB_TO_ROUTE: Record<BottomNavTab, keyof AppTabParamList> = {
   home: 'HomeTab',
   sessions: 'SessionsTab',
   wallet: 'WalletTab',
+  explore: 'ExploreTab',
   menu: 'ProfileTab',
 };
 
@@ -50,6 +54,7 @@ const ROUTE_TO_TAB: Record<string, BottomNavTab> = {
   HomeTab: 'home',
   SessionsTab: 'sessions',
   WalletTab: 'wallet',
+  ExploreTab: 'explore',
   ProfileTab: 'menu',
 };
 
@@ -147,6 +152,10 @@ export function AppTabNavigator() {
         {/* WalletTab apenas no Android — iOS compliance Guideline 1.1.4 */}
         {FINANCIAL_FEATURES_ENABLED && (
           <Tab.Screen name="WalletTab" component={WalletStack} />
+        )}
+        {/* ExploreTab apenas no iOS — ocupa o slot da Carteira no BottomNav */}
+        {!FINANCIAL_FEATURES_ENABLED && (
+          <Tab.Screen name="ExploreTab" component={ExploreStack} />
         )}
         <Tab.Screen name="ProfileTab" component={ProfileStack} />
       </Tab.Navigator>

@@ -18,6 +18,7 @@ import { Gift, Copy, CheckCircle, Heart, X, ChevronRight } from 'lucide-react-na
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { db } from '@shared/services/firebase';
+import { getPublicExploreName } from '@shared/utils/displayName';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { createTipPixPayment, getTipStatus, TipPixResponse } from '@shared/services/paymentService';
@@ -161,7 +162,8 @@ export function TipAfterSessionScreen() {
             const userSnap = await getDoc(doc(db, 'users', data.listenerId));
             if (userSnap.exists() && active) {
               const userData = userSnap.data();
-              setSupporterName(userData.name || 'Acolhedor');
+              // Nome PÚBLICO do acolhedor ("Ana S.") — nunca o nome completo.
+              setSupporterName(getPublicExploreName(userData, 'Acolhedor'));
             }
           }
         }

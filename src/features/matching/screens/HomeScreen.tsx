@@ -43,9 +43,10 @@ import {
   Compass,
 } from 'lucide-react-native';
 import { doc, updateDoc } from 'firebase/firestore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { HomeStackParamList } from '@navigation/types';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { AppTabParamList, HomeStackParamList } from '@navigation/types';
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { Avatar, BlackCard, StatsCard, SegmentedControl, BOTTOM_NAV_SCROLL_PAD, StartModal } from '@shared/components';
@@ -61,7 +62,11 @@ import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming } from '@features/session/utils/sessionFilters';
 import { canJoinSession, isUpcomingSession } from '@features/session/utils/sessionWindow';
 
-type Nav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
+// Composto com as abas: o card Explorar navega para `ExploreTab` no iOS.
+type Nav = CompositeNavigationProp<
+  NativeStackNavigationProp<HomeStackParamList, 'Home'>,
+  BottomTabNavigationProp<AppTabParamList>
+>;
 
 // ─── Opções do SegmentedControl ─────────────────────────────────────
 const ROLE_OPTIONS = [
@@ -317,15 +322,19 @@ export function HomeScreen() {
           )}
 
           {/* ─── Explorar acolhedores ─────────────────────────────────
-              Entrada do módulo. Fica aqui, e não como quinta aba, porque o
-              BottomNav já tem 4 abas no Android e 3 no iOS mais o botão
-              central — ver ADR-006. */}
+              Entrada do módulo. No Android o Explorar é rota do HomeStack
+              (4 abas já ocupadas). No iOS ele TEM aba própria — ocupa o slot
+              da Carteira — então o card leva para ela. Ver ADR-006. */}
           {!isListener && (
             <TouchableOpacity
               style={[styles.exploreCard, shadows.sm]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                navigation.navigate('Explore');
+                if (FINANCIAL_FEATURES_ENABLED) {
+                  navigation.navigate('Explore');
+                } else {
+                  navigation.navigate('ExploreTab');
+                }
               }}
               activeOpacity={0.88}
               accessibilityRole="button"

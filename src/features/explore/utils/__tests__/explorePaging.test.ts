@@ -1,6 +1,4 @@
-import { LISTENER_APPROVAL_ENFORCED } from '@shared/utils/listener';
 import {
-  buildExploreQueryConstraintSpecs,
   mergeExplorePages,
   shouldPrefetchNextPage,
   shouldAutoFillFilteredPage,
@@ -9,58 +7,31 @@ import {
   EXPLORE_MAX_AUTOFILL_PAGES,
 } from '../explorePaging';
 
-describe('buildExploreQueryConstraintSpecs', () => {
-  it('com a flag LIGADA (estado atual, 19/08): role + approved na query', () => {
-    // Garante que o default acompanha a flag real do produto.
-    expect(LISTENER_APPROVAL_ENFORCED).toBe(true);
-    expect(buildExploreQueryConstraintSpecs()).toEqual([
-      ['role', '==', 'listener'],
-      ['listenerStatus', '==', 'approved'],
-    ]);
-  });
-
-  it('ramo explícito flag off: só role == listener', () => {
-    expect(buildExploreQueryConstraintSpecs(false)).toEqual([
-      ['role', '==', 'listener'],
-    ]);
-  });
-
-  /**
-   * Documenta o comportamento esperado quando o enforcement LIGAR: a query
-   * passa a exigir também listenerStatus == 'approved' — é o que a regra de
-   * leitura publicada exige para a query ser provável. SEM orderBy em nenhum
-   * dos ramos (índice composto role+listenerStatus+name não pode ser criado).
-   */
-  it('ramo flag on: role == listener E listenerStatus == approved', () => {
-    expect(buildExploreQueryConstraintSpecs(true)).toEqual([
-      ['role', '==', 'listener'],
-      ['listenerStatus', '==', 'approved'],
-    ]);
-  });
-});
+// `buildExploreQueryConstraintSpecs` (WHERE do Firestore) saiu em 24/08: a
+// query agora é da API, que decide role/aprovação server-side.
 
 describe('mergeExplorePages', () => {
-  const a = { id: 'a', name: 'Ana' };
-  const b = { id: 'b', name: 'Bia' };
-  const c = { id: 'c', name: 'Caio' };
+  const a = { uid: 'a', publicName: 'Ana' };
+  const b = { uid: 'b', publicName: 'Bia' };
+  const c = { uid: 'c', publicName: 'Caio' };
 
   it('concatena página nova preservando a ordem existente', () => {
     expect(mergeExplorePages([a, b], [c])).toEqual([a, b, c]);
   });
 
-  it('deduplica por id — o doc existente vence', () => {
-    const bDuplicado = { id: 'b', name: 'Bia Atualizada' };
+  it('deduplica por uid — o perfil existente vence', () => {
+    const bDuplicado = { uid: 'b', publicName: 'Bia Atualizada' };
     const r = mergeExplorePages([a, b], [bDuplicado, c]);
     expect(r).toEqual([a, b, c]);
-    expect(r[1].name).toBe('Bia');
+    expect(r[1].publicName).toBe('Bia');
   });
 
   it('deduplica dentro da própria página nova', () => {
     expect(mergeExplorePages([], [a, a, b])).toEqual([a, b]);
   });
 
-  it('ignora itens sem id', () => {
-    expect(mergeExplorePages([a], [{ id: '', name: 'Fantasma' }, b])).toEqual([a, b]);
+  it('ignora itens sem uid', () => {
+    expect(mergeExplorePages([a], [{ uid: '', publicName: 'Fantasma' }, b])).toEqual([a, b]);
   });
 
   it('devolve a MESMA referência quando nada novo chega (evita re-render)', () => {
@@ -113,20 +84,20 @@ describe('shouldAutoFillFilteredPage', () => {
     pagesAutoFetched: 0,
   };
 
-  it('continua paginando enquanto a lista filtrada tem menos de uma página', () => {
+  it('continua paginando enquanto a lista tem menos de uma página', () => {
     expect(shouldAutoFillFilteredPage({ ...base, filteredCount: 0 })).toBe(true);
     expect(
       shouldAutoFillFilteredPage({ ...base, filteredCount: EXPLORE_PAGE_SIZE - 1 })
     ).toBe(true);
   });
 
-  it('para quando a lista filtrada enche uma página', () => {
+  it('para quando a lista enche uma página', () => {
     expect(
       shouldAutoFillFilteredPage({ ...base, filteredCount: EXPLORE_PAGE_SIZE })
     ).toBe(false);
   });
 
-  it('para no teto de páginas por interação — não varre a coleção', () => {
+  it('para no teto de páginas por interação — não varre a base', () => {
     expect(
       shouldAutoFillFilteredPage({
         ...base,

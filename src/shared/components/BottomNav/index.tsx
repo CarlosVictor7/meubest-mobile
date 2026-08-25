@@ -3,16 +3,21 @@
  *
  * Correção: botão COMEÇAR posicionado com cálculo correto relativo à safeArea.
  * Constantes exportadas para uso nas telas (paddingBottom do ScrollView).
+ *
+ * Abas por plataforma vêm de `tabsForPlatform` (./tabs.ts):
+ *   Android → Início, Sessões | Carteira, Menu
+ *   iOS     → Início, Sessões | Explorar, Menu   (Guideline 1.1.4: sem Carteira)
  */
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { User, Calendar, CreditCard, Settings, Zap } from 'lucide-react-native';
+import { User, Calendar, CreditCard, Compass, Settings, Zap } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
+import { tabsForPlatform, type BottomNavTab } from './tabs';
 
-export type BottomNavTab = 'home' | 'sessions' | 'wallet' | 'menu';
+export type { BottomNavTab } from './tabs';
 
 // ── Constantes exportadas para padding das telas ──────────────────
 export const BOTTOM_NAV_BAR_HEIGHT = 64;   // altura da barra
@@ -34,17 +39,16 @@ interface TabItem {
   Icon: typeof User;
 }
 
-const ALL_TABS: TabItem[] = [
-  { id: 'home',     label: 'Início',   Icon: User       },
-  { id: 'sessions', label: 'Sessões',  Icon: Calendar   },
-  { id: 'wallet',   label: 'Carteira', Icon: CreditCard },
-  { id: 'menu',     label: 'Menu',     Icon: Settings   },
-];
+const TAB_ITEMS: Record<BottomNavTab, TabItem> = {
+  home:     { id: 'home',     label: 'Início',   Icon: User       },
+  sessions: { id: 'sessions', label: 'Sessões',  Icon: Calendar   },
+  wallet:   { id: 'wallet',   label: 'Carteira', Icon: CreditCard },
+  explore:  { id: 'explore',  label: 'Explorar', Icon: Compass    },
+  menu:     { id: 'menu',     label: 'Menu',     Icon: Settings   },
+};
 
-// No iOS a aba Carteira é ocultada (iOS compliance Guideline 1.1.4).
-const TABS: TabItem[] = FINANCIAL_FEATURES_ENABLED
-  ? ALL_TABS
-  : ALL_TABS.filter((t) => t.id !== 'wallet');
+// Sempre 4 abas: [0,1] à esquerda do COMEÇAR, [2,3] à direita.
+const TABS: TabItem[] = tabsForPlatform(FINANCIAL_FEATURES_ENABLED).map((id) => TAB_ITEMS[id]);
 
 export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: BottomNavProps) {
   const insets = useSafeAreaInsets();
@@ -85,6 +89,16 @@ export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: Bo
    */
   const btnBottom = safeBottom + BOTTOM_NAV_BAR_HEIGHT + BOTTOM_NAV_BTN_ELEV - BOTTOM_NAV_BTN_SIZE;
 
+  const renderTab = (item: TabItem) => (
+    <NavTab
+      key={item.id}
+      item={item}
+      active={activeTab === item.id}
+      onPress={() => handleTabPress(item.id)}
+      badge={item.id === 'sessions' ? hasBadge : undefined}
+    />
+  );
+
   return (
     <View style={styles.wrapper} pointerEvents="box-none">
       {/* ── Botão COMEÇAR — fora do navBar para não ser clipado ── */}
@@ -103,25 +117,17 @@ export function BottomNav({ activeTab, onTabChange, onStartPress, hasBadge }: Bo
 
       {/* ── Barra de navegação ── */}
       <View style={[styles.navBar, { paddingBottom: safeBottom, height: BOTTOM_NAV_BAR_HEIGHT + safeBottom }]}>
-        {/* Metade esquerda: sempre exibe Início e Sessões */}
+        {/* Metade esquerda: Início e Sessões */}
         <View style={styles.half}>
-          <NavTab item={TABS[0]} active={activeTab === 'home'}     onPress={() => handleTabPress('home')} />
-          <NavTab item={TABS[1]} active={activeTab === 'sessions'} onPress={() => handleTabPress('sessions')} badge={hasBadge} />
+          {TABS.slice(0, 2).map(renderTab)}
         </View>
 
         {/* Espaço central para o botão */}
         <View style={styles.centerGap} />
 
-        {/* Metade direita: Carteira (Android) + Menu, ou apenas Menu (iOS) */}
+        {/* Metade direita: Carteira (Android) ou Explorar (iOS) + Menu */}
         <View style={styles.half}>
-          {FINANCIAL_FEATURES_ENABLED && (
-            <NavTab item={TABS[2]} active={activeTab === 'wallet'} onPress={() => handleTabPress('wallet')} />
-          )}
-          <NavTab
-            item={FINANCIAL_FEATURES_ENABLED ? TABS[3] : TABS[2]}
-            active={activeTab === 'menu'}
-            onPress={() => handleTabPress('menu')}
-          />
+          {TABS.slice(2, 4).map(renderTab)}
         </View>
       </View>
     </View>

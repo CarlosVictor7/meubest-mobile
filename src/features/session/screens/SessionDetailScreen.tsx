@@ -62,7 +62,7 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
-import { getCounterpart } from '@features/session/utils/sessionFilters';
+import { getCounterpart, publicCounterpartName } from '@features/session/utils/sessionFilters';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 
 // ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
@@ -175,10 +175,16 @@ export function SessionDetailScreen() {
     ? `${session.durationMinutes} min`
     : '—';
 
-  const speakerName  = session.speakerName  ?? 'Ouvinte';
-  const listenerName = session.listenerName ?? 'Apoiador';
   const isSpeaker    = user?.uid === session.speakerId;
   const counterpart  = getCounterpart(session, user?.uid);
+  // O OUTRO participante aparece sempre pelo nome público ("Ana S."), mesmo em
+  // sessões legadas que gravaram o nome completo. O próprio nome fica como está.
+  const speakerName  = isSpeaker
+    ? session.speakerName ?? 'Ouvinte'
+    : publicCounterpartName(session, user?.uid, 'Ouvinte');
+  const listenerName = isSpeaker
+    ? publicCounterpartName(session, user?.uid, 'Apoiador')
+    : session.listenerName ?? 'Apoiador';
   const sessionIdShort = sessionId.slice(0, 8).toUpperCase();
 
   return (
