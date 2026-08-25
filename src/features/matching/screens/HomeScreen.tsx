@@ -25,6 +25,7 @@ import {
   Share,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SESSION_THEMES } from '@constants/config';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -321,13 +322,33 @@ export function HomeScreen() {
             </View>
           )}
 
+          {/* ═══════════════════════════════════════════════════════
+              5. STATS — saldo (Android) — fica ACIMA do Explorar para o
+              hero do Explorar ganhar o destaque logo antes das sessões
+          ═══════════════════════════════════════════════════════ */}
+          {/* Sessões e Avaliação sairam daqui: a grade 2x2 acima ja mostra os dois,
+              e ter o mesmo numero duas vezes na mesma tela so ocupa altura.
+              O card de saldo fica — e financeiro e nao tem lugar na grade. */}
+          <View style={styles.statsCol}>
+            {/* StatsCard de saldo apenas no Android (iOS compliance Guideline 1.1.4) */}
+            {FINANCIAL_FEATURES_ENABLED && (
+              <StatsCard
+                label={isListener ? 'Retribuição Atual' : 'Saldo Recebido'}
+                value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
+                subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
+                icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
+                onPress={() => (navigation as any).navigate('WalletTab')}
+              />
+            )}
+          </View>
+
           {/* ─── Explorar acolhedores ─────────────────────────────────
               Entrada do módulo. No Android o Explorar é rota do HomeStack
               (4 abas já ocupadas). No iOS ele TEM aba própria — ocupa o slot
               da Carteira — então o card leva para ela. Ver ADR-006. */}
           {!isListener && (
             <TouchableOpacity
-              style={[styles.exploreCard, shadows.sm]}
+              style={[styles.exploreCard, shadows.primary]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (FINANCIAL_FEATURES_ENABLED) {
@@ -336,20 +357,40 @@ export function HomeScreen() {
                   navigation.navigate('ExploreTab');
                 }
               }}
-              activeOpacity={0.88}
+              activeOpacity={0.9}
               accessibilityRole="button"
               accessibilityLabel="Explorar acolhedores disponíveis"
             >
-              <View style={styles.exploreIconWrap}>
-                <Compass size={22} color={colors.primary} strokeWidth={2.2} />
-              </View>
-              <View style={styles.exploreText}>
-                <Text style={styles.exploreTitle}>EXPLORAR ACOLHEDORES</Text>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.exploreGradient}
+              >
+                {/* Brilho decorativo — dá profundidade sem imagem */}
+                <View style={styles.exploreGlowLg} pointerEvents="none" />
+                <View style={styles.exploreGlowSm} pointerEvents="none" />
+
+                <View style={styles.exploreTop}>
+                  <View style={styles.exploreIconWrap}>
+                    <Compass size={30} color={colors.textInverted} strokeWidth={2} />
+                  </View>
+                  <View style={styles.exploreEyebrowPill}>
+                    <View style={styles.exploreLiveDot} />
+                    <Text style={styles.exploreEyebrow}>DISPONÍVEIS AGORA</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.exploreTitle}>EXPLORAR{'\n'}ACOLHEDORES</Text>
                 <Text style={styles.exploreSubtitle}>
-                  Veja quem está disponível e escolha com quem falar.
+                  Veja quem está pronto para ouvir você e escolha com quem falar.
                 </Text>
-              </View>
-              <ChevronRight size={20} color={colors.primary} strokeWidth={2.4} />
+
+                <View style={styles.exploreCta}>
+                  <Text style={styles.exploreCtaText}>VER ACOLHEDORES</Text>
+                  <ChevronRight size={18} color={colors.primary} strokeWidth={2.8} />
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           )}
 
@@ -373,25 +414,6 @@ export function HomeScreen() {
             availability={profile?.availability}
           />
 
-
-          {/* ═══════════════════════════════════════════════════════
-              5. STATS — lista vertical
-          ═══════════════════════════════════════════════════════ */}
-          {/* Sessões e Avaliação sairam daqui: a grade 2x2 acima ja mostra os dois,
-              e ter o mesmo numero duas vezes na mesma tela so ocupa altura.
-              O card de saldo fica — e financeiro e nao tem lugar na grade. */}
-          <View style={styles.statsCol}>
-            {/* StatsCard de saldo apenas no Android (iOS compliance Guideline 1.1.4) */}
-            {FINANCIAL_FEATURES_ENABLED && (
-              <StatsCard
-                label={isListener ? 'Retribuição Atual' : 'Saldo Recebido'}
-                value={walletSummary === null ? 'Carregando...' : `R$${(walletSummary.balanceRewards ?? 0).toFixed(2)}`}
-                subValue={isListener && walletSummary !== null ? `TOTAL ACUMULADO: R$${(walletSummary.totalTipsReceived ?? 0).toFixed(2)}` : undefined}
-                icon={<CreditCard size={20} color={colors.primary} strokeWidth={2} />}
-                onPress={() => (navigation as any).navigate('WalletTab')}
-              />
-            )}
-          </View>
 
           {/* ═══════════════════════════════════════════════════════
               6. SESSÕES CARD
@@ -944,34 +966,102 @@ const styles = StyleSheet.create({
 
   // ─── Cards de Ação — Modo Ouvir ─────────────────────────────────
   exploreCard: {
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+  },
+  exploreGradient: {
+    padding: spacing.lg,
+    paddingBottom: spacing.lg,
+    minHeight: 200,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    overflow: 'hidden',
+  },
+  exploreGlowLg: {
+    position: 'absolute',
+    right: -70,
+    top: -90,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  exploreGlowSm: {
+    position: 'absolute',
+    right: 40,
+    bottom: -60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  exploreTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    borderWidth: 2,
-    borderColor: colors.primaryLight,
-    padding: spacing.md,
+    justifyContent: 'space-between',
   },
   exploreIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
-    backgroundColor: `${colors.primary}12`,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  exploreText: { flex: 1, gap: 2 },
-  exploreTitle: {
-    fontSize: typography.size.sm,
+  exploreEyebrowPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  exploreLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#7CFFB2',
+  },
+  exploreEyebrow: {
+    fontSize: 10,
     fontWeight: typography.weight.black,
-    color: colors.primary,
-    letterSpacing: 0.3,
+    color: colors.textInverted,
+    letterSpacing: 1.2,
+  },
+  exploreTitle: {
+    fontSize: 24,
+    lineHeight: 27,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: 0.4,
+    marginTop: spacing.xs,
   },
   exploreSubtitle: {
-    fontSize: 11,
-    color: colors.textMutedValue,
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.86)',
     fontWeight: typography.weight.medium,
+    maxWidth: '88%',
+  },
+  exploreCta: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: borderRadius.full,
+    marginTop: spacing.xs,
+  },
+  exploreCtaText: {
+    fontSize: 12,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 1,
   },
   actionGrid: {
     gap: spacing.md,
