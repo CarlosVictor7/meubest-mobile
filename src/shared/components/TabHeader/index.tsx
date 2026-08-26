@@ -24,6 +24,7 @@ import { doc, updateDoc, collection, query, where, orderBy, limit, onSnapshot } 
 import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { Avatar, SegmentedControl } from '@shared/components';
+import { ToggleGuidance } from '@shared/components/ToggleGuidance';
 import { NoticeStrip } from '@shared/components/NoticeStrip';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { NotificationsModal } from '@features/notifications/components/NotificationsModal';
@@ -282,8 +283,10 @@ export function TabHeader({
       {/* ── Controles de papel ───────────────────────────────────── */}
       {!hideControls && (
         <View style={styles.controls}>
-          {/* SegmentedControl — Desabafar / Acolher. O thumb animado + peek
-              educativo (3 primeiras aberturas) substituem a seta SVG de 26/08. */}
+          {/* Indicação orgânica: duas curvas com seta, uma para DESABAFAR e
+              outra para ACOLHER. Anima nas 3 primeiras aberturas e depois fica
+              estática (sempre visível). Complementa o thumb animado abaixo. */}
+          <ToggleGuidance />
           <SegmentedControl
             options={ROLE_OPTIONS}
             value={activeRole}
