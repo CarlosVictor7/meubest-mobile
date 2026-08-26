@@ -5,6 +5,7 @@
  * AGORA" habilita pelos critérios certos e que os textos do card não regridem.
  */
 import { SESSION_THEMES } from '@constants/config';
+import { bioOverflow as sharedOverflow } from '@shared/utils/expandableText';
 import type { ExploreFilters } from './exploreFilters';
 import type { PublicExploreProfile } from '../types';
 
@@ -96,6 +97,75 @@ export function getThemeChips(
     chips: resolved.slice(0, max),
     extra: Math.max(0, resolved.length - max),
   };
+}
+
+export interface ThemeChipsState extends ThemeChipsResult {
+  /** Há mais chips do que o recolhido mostra (o "+N" / "MOSTRAR MENOS" existe)? */
+  canToggle: boolean;
+  expanded: boolean;
+}
+
+/**
+ * Estado dos chips de interesse no card. Recolhido: até `max` + "+N".
+ * Expandido: TODOS os interesses resolvidos, `extra = 0` — sem request, é o
+ * mesmo DTO. `canToggle` só quando há excedente; com ≤ max não há botão.
+ */
+export function themeChipsState(
+  interests: string[] | null | undefined,
+  expanded: boolean,
+  max: number = MAX_THEME_CHIPS
+): ThemeChipsState {
+  const all = getThemeChips(interests, Number.MAX_SAFE_INTEGER).chips;
+  const canToggle = all.length > max;
+  if (expanded && canToggle) {
+    return { chips: all, extra: 0, canToggle, expanded: true };
+  }
+  return {
+    chips: all.slice(0, max),
+    extra: Math.max(0, all.length - max),
+    canToggle,
+    expanded: false,
+  };
+}
+
+export interface PresenceBadges {
+  /** Pill "DISPONÍVEL AGORA" — SÓ por `reachable`. */
+  showAvailablePill: boolean;
+  /** Ponto verde + "Ativo agora" — SÓ por `liveNow`, independente do pill. */
+  showActiveNow: boolean;
+  /** "Indisponível para chamada agora" — quando não reachable (fora da prévia). */
+  showUnavailableHint: boolean;
+}
+
+/**
+ * Os dois sinais são independentes (26/08): `reachable` (pode receber chamada)
+ * e `liveNow` (app em foreground há ≤ 6 min). Um acolhedor pode estar ativo
+ * sem estar disponível (chave desligada) e disponível sem estar ativo
+ * (agenda programada, app fechado).
+ */
+export function getPresenceBadges(
+  availability: TalkNowAvailability,
+  previewMode: boolean = false
+): PresenceBadges {
+  return {
+    showAvailablePill: availability.canTalkNow,
+    showActiveNow: availability.liveNow,
+    showUnavailableHint: !availability.canTalkNow && !previewMode,
+  };
+}
+
+/** Linhas da bio quando recolhida. */
+export const BIO_COLLAPSED_LINES = 3;
+
+/**
+ * A bio transborda o recolhido? Só então o "VER MAIS" aparece. Decisão pura
+ * compartilhada com `ExpandableText` (`@shared/utils/expandableText`).
+ */
+export function bioOverflow(
+  lineCount: number | null | undefined,
+  collapsedLines: number = BIO_COLLAPSED_LINES
+): boolean {
+  return sharedOverflow(lineCount, collapsedLines);
 }
 
 /** Quantos filtros estão ativos — o badge do botão de filtros do header. */
