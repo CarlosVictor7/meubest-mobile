@@ -404,7 +404,7 @@ export function ExploreScreen() {
             </TouchableOpacity>
           )}
 
-          <Text style={styles.title}>EXPLORAR</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>EXPLORAR</Text>
 
           <TouchableOpacity
             onPress={toggleOnlyOnline}
@@ -599,6 +599,7 @@ const styles = StyleSheet.create({
   iconBtn: { padding: 4 },
   title: {
     flex: 1,
+    flexShrink: 1,
     fontSize: typography.size.xl,
     fontWeight: typography.weight.black,
     color: colors.primary,
@@ -620,6 +621,7 @@ const styles = StyleSheet.create({
 
   // Quick-toggle "DISPONÍVEIS AGORA" — mesmo estado do chip da sheet.
   quickToggle: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
