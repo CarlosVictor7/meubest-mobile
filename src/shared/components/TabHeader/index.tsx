@@ -3,9 +3,9 @@
  *
  * Regras de exibição:
  * - Toggle Online/Offline → só aparece quando activeRole === 'listener' (modo Apoiar)
- * - Seta curva discreta ACIMA do toggle Desabafar|Acolher, só quando o toggle
- *   existe (26/08: substituiu o bloco "Vire a chave aqui!" + "COMO FUNCIONA?",
- *   que ocupava ~90 px abaixo do toggle; "Como funciona" vive no Menu)
+ * - Toggle Desabafar|Acolher com thumb animado e peek educativo nas 3
+ *   primeiras aberturas (26/08: substituiu a seta SVG, que por sua vez havia
+ *   substituído o bloco "Vire a chave aqui!"; "Como funciona" vive no Menu)
  * - Modo Ouvir: apenas SegmentedControl + NoticeCard (sem chave)
  */
 import React, { useState, useCallback, useEffect } from 'react';
@@ -17,7 +17,6 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 import { Bell } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -283,33 +282,13 @@ export function TabHeader({
       {/* ── Controles de papel ───────────────────────────────────── */}
       {!hideControls && (
         <View style={styles.controls}>
-          {/* Seta curva discreta apontando para o toggle — vetorial, sem
-              texto. Só existe junto do toggle (hideControls oculta os dois). */}
-          <View style={styles.arrowWrap} pointerEvents="none" accessible={false}>
-            <Svg width={44} height={26} viewBox="0 0 44 26" style={styles.arrow}>
-              <Path
-                d="M4 3 C 4 15, 12 21, 27 21"
-                stroke={colors.primary}
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                fill="none"
-              />
-              <Path
-                d="M21 15 L 27 21 L 21 26"
-                stroke={colors.primary}
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </Svg>
-          </View>
-
-          {/* SegmentedControl — Ouvir / Apoiar */}
+          {/* SegmentedControl — Desabafar / Acolher. O thumb animado + peek
+              educativo (3 primeiras aberturas) substituem a seta SVG de 26/08. */}
           <SegmentedControl
             options={ROLE_OPTIONS}
             value={activeRole}
             onChange={handleRoleChange}
+            educationalHint
           />
 
           {/* Bloco da chave Online — só em modo Apoiar */}
@@ -453,14 +432,6 @@ const styles = StyleSheet.create({
     letterSpacing: typography.tracking.wider,
   },
   onlineLabelActive: { color: '#22C55E' },
-
-  // Seta curva acima do toggle — discreta (opacity 0.6), sem ocupar o espaço
-  // que o bloco de texto ocupava.
-  arrowWrap: {
-    alignItems: 'center',
-    marginBottom: -spacing.xs,
-  },
-  arrow: { opacity: 0.6 },
 
   // Faixa de aviso (NoticeStrip)
   noticeWrap: {
