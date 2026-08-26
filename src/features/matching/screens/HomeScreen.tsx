@@ -62,6 +62,7 @@ import { AvailabilityModal } from '../components/AvailabilityModal';
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming } from '@features/session/utils/sessionFilters';
 import { canJoinSession, isUpcomingSession } from '@features/session/utils/sessionWindow';
+import { useJoinSession } from '@features/session/hooks/useJoinSession';
 
 // Composto com as abas: o card Explorar navega para `ExploreTab` no iOS.
 type Nav = CompositeNavigationProp<
@@ -229,12 +230,20 @@ export function HomeScreen() {
   const recent = useMemo(() => filterHistory(sessions), [sessions]);
 
   // A sala só abre dentro da janela — uma sessão agendada para daqui a três
-  // dias não pode ser aberta hoje. Ver canJoinSession.
+  // dias não pode ser aberta hoje (canJoinSession) — e, quando abre, passa
+  // pelo /join da API. Fora da janela o toque leva ao detalhe (status,
+  // aceitar/recusar, cancelar).
+  const { join } = useJoinSession();
   const handleSessionPress = useCallback((s: any) => {
     if (canJoinSession(s).canJoin) {
-      (navigation as any).navigate('Session', { sessionId: s.id });
+      join(s);
+    } else {
+      (navigation as any).navigate('SessionsTab', {
+        screen: 'SessionDetail',
+        params: { sessionId: s.id },
+      });
     }
-  }, [navigation]);
+  }, [navigation, join]);
 
   return (
     <View style={styles.root}>

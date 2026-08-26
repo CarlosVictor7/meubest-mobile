@@ -1,10 +1,18 @@
 /**
- * SessionDetailScreen — Detalhe de uma sessão concluída
+ * SessionDetailScreen — Detalhe de uma sessão (concluída OU agendada)
  *
  * Exibe dados reais da sessão (Firestore):
  * - Tema/categoria, status, data/hora, duração
  * - Nome do speaker e listener
  * - Avaliação (estrelas + comentário) se existir
+ *
+ * Sessão AGENDADA (26/08 — modelo de solicitação) ganha ações, todas pela API:
+ * - ENTRAR (dentro da janela → POST /join → VideoRoom; 409 = alerta)
+ * - ACEITAR / RECUSAR (pending e eu sou o acolhedor)
+ * - CANCELAR AGENDAMENTO (pending/accepted, com confirmação)
+ * - ADICIONAR AO CALENDÁRIO (confirmada; deep link do Google Calendar)
+ * Push de aceite/recusa/cancelamento/lembrete cai aqui — nunca na sala.
+ *
  * Visual fiel ao padrão Meu Best: card branco, borda laranja, tipografia forte.
  *
  * ┌── Safe area: por que o header ficava embaixo da status bar ─────────────────┐
@@ -25,7 +33,7 @@
  * │ status bar comum.                                                          │
  * └────────────────────────────────────────────────────────────────────────────┘
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -34,6 +42,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  Alert,
+  Linking,
 } from 'react-native';
 // SafeAreaView do react-native é NO-OP no Android — ver o bloco de doc no topo.
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,6 +57,11 @@ import {
   ShieldCheck,
   MessageCircle,
   CalendarPlus,
+  Check,
+  X,
+  LogIn,
+  XCircle,
+  Hourglass,
 } from 'lucide-react-native';
 import {
   doc,
@@ -63,26 +78,23 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { getCounterpart, publicCounterpartName } from '@features/session/utils/sessionFilters';
+import {
+  sessionStatusColor,
+  sessionStatusLabel,
+  isCancellableScheduled,
+} from '@features/session/utils/sessionStatus';
+import { canJoinSession, describeJoinReason } from '@features/session/utils/sessionWindow';
+import { formatScheduleWhen } from '@features/session/utils/scheduleFormat';
+import { useJoinSession } from '@features/session/hooks/useJoinSession';
+import {
+  acceptScheduledSession,
+  rejectScheduledSession,
+  cancelScheduledSession,
+} from '@features/session/services/scheduling';
+import { googleCalendarUrl } from '@shared/utils/calendarLink';
 import { BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 
-// ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
-const STATUS_LABEL: Record<string, string> = {
-  active:    'EM ANDAMENTO',
-  pending:   'AGUARDANDO',
-  completed: 'CONCLUÍDA',
-  rejected:  'CANCELADA',
-  cancelled: 'CANCELADA',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  active:    '#22C55E',
-  pending:   '#F97316',
-  completed: '#3B82F6',
-  rejected:  '#9CA3AF',
-  cancelled: '#9CA3AF',
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
+type DetailAction = 'accept' | 'reject' | 'cancel' | null;
 
 export function SessionDetailScreen() {
   const navigation = useNavigation<any>();
@@ -93,6 +105,17 @@ export function SessionDetailScreen() {
   const [session, setSession]   = useState<any>(null);
   const [review, setReview]     = useState<any>(null);
   const [loading, setLoading]   = useState(true);
+  const [acting, setActing]     = useState<DetailAction>(null);
+  const { join, joining }       = useJoinSession();
+
+  /** Relê a sessão (getDoc) — usado no mount e depois de cada ação via API. */
+  const reloadSession = useCallback(async () => {
+    const sessionSnap = await getDoc(doc(db, 'sessions', sessionId));
+    if (!sessionSnap.exists()) return null;
+    const data = { id: sessionSnap.id, ...sessionSnap.data() };
+    setSession(data);
+    return data;
+  }, [sessionId]);
 
   useEffect(() => {
     let active = true;
@@ -127,6 +150,77 @@ export function SessionDetailScreen() {
     return () => { active = false; };
   }, [sessionId]);
 
+  // ── Ações de agendamento (API) — guard de duplo toque via `acting` ─────────
+  const runAction = useCallback(
+    async (action: Exclude<DetailAction, null>, fn: () => Promise<unknown>, onDone?: () => void) => {
+      if (acting) return;
+      setActing(action);
+      try {
+        await fn();
+        await reloadSession();
+        onDone?.();
+      } catch (err: any) {
+        Alert.alert('Não foi possível concluir', err?.message || 'Tente novamente.');
+        // Estado pode ter mudado por fora (409/404): reflete o que está no banco.
+        reloadSession().catch(() => {});
+      } finally {
+        setActing(null);
+      }
+    },
+    [acting, reloadSession]
+  );
+
+  const handleAccept = () =>
+    runAction('accept', () => acceptScheduledSession(sessionId), () => {
+      const when = formatScheduleWhen(session?.selectedTime);
+      Alert.alert(
+        'Agendamento aceito',
+        when
+          ? `Conversa marcada para ${when.day} às ${when.time}. A sala abre 15 minutos antes.`
+          : 'Conversa confirmada.'
+      );
+    });
+
+  const handleReject = () =>
+    Alert.alert('Recusar solicitação?', 'A pessoa será avisada de que este horário não deu.', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Recusar',
+        style: 'destructive',
+        onPress: () => runAction('reject', () => rejectScheduledSession(sessionId)),
+      },
+    ]);
+
+  const handleCancel = () =>
+    Alert.alert('Cancelar agendamento?', 'O outro participante será avisado do cancelamento.', [
+      { text: 'Manter', style: 'cancel' },
+      {
+        text: 'Cancelar agendamento',
+        style: 'destructive',
+        onPress: () => runAction('cancel', () => cancelScheduledSession(sessionId)),
+      },
+    ]);
+
+  const handleAddToCalendar = async () => {
+    if (!session?.selectedTime) return;
+    const other = publicCounterpartName(session, user?.uid, 'Meu Best');
+    const url = googleCalendarUrl({
+      title: `Meu Best — Conversa com ${other}`,
+      start: session.selectedTime,
+      durationMinutes: session.duration,
+      details: `Tema: ${session.category ?? 'Conversa'}\nEntre no app Meu Best até 15 minutos antes do horário.`,
+    });
+    if (!url) {
+      Alert.alert('Não foi possível', 'Horário inválido para o calendário.');
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Não foi possível abrir o calendário', 'Verifique se há um navegador ou o app do Google Agenda instalado.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -152,8 +246,8 @@ export function SessionDetailScreen() {
 
   // ─── Derivados da sessão ──────────────────────────────────────────────────
   const status      = session.status ?? 'completed';
-  const statusLabel = STATUS_LABEL[status] ?? status.toUpperCase();
-  const statusColor = STATUS_COLOR[status] ?? '#9CA3AF';
+  const statusLabel = sessionStatusLabel(status);
+  const statusColor = sessionStatusColor(status);
   const category    = (session.category ?? session.theme ?? '—').toUpperCase();
 
   const rawDate = session.selectedTime ?? session.createdAt?.toDate?.();
@@ -176,7 +270,21 @@ export function SessionDetailScreen() {
     : '—';
 
   const isSpeaker    = user?.uid === session.speakerId;
+  const isListener   = !!user?.uid && user.uid === session.listenerId;
+  const isParticipant = isSpeaker || isListener;
   const counterpart  = getCounterpart(session, user?.uid);
+
+  // ── Ações disponíveis (sessão agendada) ────────────────────────────────────
+  const isScheduled   = session.type === 'scheduled';
+  const joinDecision  = canJoinSession(session);
+  const showAcceptReject = isScheduled && status === 'pending' && isListener;
+  const showJoin      = isScheduled && isParticipant && (status === 'accepted' || status === 'active');
+  const showCancel    = isParticipant && isCancellableScheduled(session);
+  // Confirmada = accepted, ou active legado (aceite do web antigo, sem startedAt).
+  const isConfirmed   = isScheduled && (status === 'accepted' || (status === 'active' && !session.startedAt));
+  const showCalendar  = isConfirmed && isParticipant && !!session.selectedTime;
+  const waitingOther  = isScheduled && status === 'pending' && isSpeaker;
+  const isJoining     = joining === sessionId;
   // O OUTRO participante aparece sempre pelo nome público ("Ana S."), mesmo em
   // sessões legadas que gravaram o nome completo. O próprio nome fica como está.
   const speakerName  = isSpeaker
@@ -235,6 +343,116 @@ export function SessionDetailScreen() {
             />
           </View>
         </View>
+
+        {/* ── Ações da sessão AGENDADA (todas via API) ── */}
+        {waitingOther && (
+          <View style={[styles.hintCard, shadows.sm]}>
+            <Hourglass size={16} color={colors.textMutedValue} strokeWidth={2.2} />
+            <Text style={styles.hintText}>
+              {session.listenerId
+                ? `Aguardando ${listenerName} confirmar. Você será avisado(a) quando responder.`
+                : 'Aguardando um acolhedor disponível confirmar este horário.'}
+            </Text>
+          </View>
+        )}
+
+        {showAcceptReject && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, acting && styles.btnDisabled, shadows.primary]}
+              onPress={handleAccept}
+              disabled={!!acting}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !!acting, busy: acting === 'accept' }}
+            >
+              {acting === 'accept' ? (
+                <ActivityIndicator size="small" color={colors.textInverted} />
+              ) : (
+                <>
+                  <Check size={16} color={colors.textInverted} strokeWidth={2.6} />
+                  <Text style={styles.primaryBtnText}>ACEITAR</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.outlineBtn, acting && styles.btnDisabled]}
+              onPress={handleReject}
+              disabled={!!acting}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !!acting, busy: acting === 'reject' }}
+            >
+              {acting === 'reject' ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <X size={16} color={colors.primary} strokeWidth={2.6} />
+                  <Text style={styles.outlineBtnText}>RECUSAR</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {showJoin && (
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              (!joinDecision.canJoin || isJoining) && styles.btnDisabled,
+              joinDecision.canJoin && shadows.primary,
+            ]}
+            onPress={() => join(session)}
+            disabled={!joinDecision.canJoin || isJoining}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !joinDecision.canJoin, busy: isJoining }}
+          >
+            {isJoining ? (
+              <ActivityIndicator size="small" color={colors.textInverted} />
+            ) : (
+              <>
+                <LogIn size={16} color={colors.textInverted} strokeWidth={2.4} />
+                <Text style={styles.primaryBtnText}>
+                  {joinDecision.canJoin ? 'ENTRAR' : describeJoinReason(joinDecision)}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {showCalendar && (
+          <TouchableOpacity
+            style={[styles.rebookButton, shadows.sm]}
+            onPress={handleAddToCalendar}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Adicionar ao calendário"
+          >
+            <CalendarPlus size={16} color={colors.primary} strokeWidth={2.4} />
+            <Text style={styles.rebookButtonText}>ADICIONAR AO CALENDÁRIO</Text>
+          </TouchableOpacity>
+        )}
+
+        {showCancel && (
+          <TouchableOpacity
+            style={[styles.dangerBtn, acting && styles.btnDisabled]}
+            onPress={handleCancel}
+            disabled={!!acting}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !!acting, busy: acting === 'cancel' }}
+          >
+            {acting === 'cancel' ? (
+              <ActivityIndicator size="small" color="#DC2626" />
+            ) : (
+              <>
+                <XCircle size={16} color="#DC2626" strokeWidth={2.2} />
+                <Text style={styles.dangerBtnText}>CANCELAR AGENDAMENTO</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* ── Card de Avaliação ── */}
         {review ? (
@@ -540,6 +758,84 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.textMutedValue,
     fontWeight: typography.weight.medium,
+  },
+
+  // Ações de agendamento
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  hintText: {
+    flex: 1,
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  primaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+  },
+  primaryBtnText: {
+    color: colors.textInverted,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    letterSpacing: typography.tracking.widest,
+  },
+  outlineBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+  },
+  outlineBtnText: {
+    color: colors.primary,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.8,
+  },
+  dangerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: 'rgba(220,38,38,0.35)',
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+  },
+  dangerBtnText: {
+    color: '#DC2626',
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.8,
+  },
+  btnDisabled: {
+    opacity: 0.55,
   },
 
   // Botão gorjeta

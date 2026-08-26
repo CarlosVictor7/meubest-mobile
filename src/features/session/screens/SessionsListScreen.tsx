@@ -35,6 +35,7 @@ import {
   ScrollView,
   StatusBar,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, Clock, Video, CalendarClock, ChevronDown } from 'lucide-react-native';
@@ -45,6 +46,8 @@ import { colors, spacing, typography, borderRadius, shadows } from '@constants/t
 import { useUserSessions } from '@features/session/hooks/useUserSessions';
 import { filterHistory, filterUpcoming, getCounterpart } from '@features/session/utils/sessionFilters';
 import { canJoinSession, describeJoinReason, isUpcomingSession } from '@features/session/utils/sessionWindow';
+import { sessionStatusColor, sessionStatusLabel } from '@features/session/utils/sessionStatus';
+import { useJoinSession } from '@features/session/hooks/useJoinSession';
 import {
   HISTORY_PAGE_SIZE,
   UPCOMING_PAGE_SIZE,
@@ -54,24 +57,7 @@ import {
   remaining,
 } from '@features/session/utils/pagination';
 
-// ─── Mapeamento de status → PT-BR ────────────────────────────────────────────
-const STATUS_LABEL: Record<string, string> = {
-  active:    'EM ANDAMENTO',
-  pending:   'AGUARDANDO',
-  completed: 'CONCLUÍDA',
-  rejected:  'CANCELADA',
-  cancelled: 'CANCELADA',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  active:    '#22C55E',
-  pending:   '#F97316',
-  completed: '#3B82F6',
-  rejected:  '#9CA3AF',
-  cancelled: '#9CA3AF',
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
+// Rótulos e cores de status vivem em utils/sessionStatus (um lugar só).
 
 export function SessionsListScreen() {
   const { user } = useAuth();
@@ -208,12 +194,18 @@ export function SessionsListScreen() {
 
 /**
  * Card de uma sessão agendada que ainda vai acontecer.
- * O botão só vira "ENTRAR NA SALA" dentro da janela — ver `canJoinSession`.
+ * O botão só vira "ENTRAR NA SALA" dentro da janela — ver `canJoinSession` —
+ * e passa pelo `/join` da API antes de abrir a sala (409 → alerta, sala não abre).
+ * Tocar no card abre o detalhe (aceitar/recusar/cancelar/calendário).
  */
 function UpcomingCard({ session, uid }: { session: any; uid?: string | null }) {
   const navigation = useNavigation<any>();
+  const { join, joining } = useJoinSession();
   const decision = canJoinSession(session);
   const counterpart = getCounterpart(session, uid);
+  const status = session.status ?? 'pending';
+  const statusColor = sessionStatusColor(status);
+  const isJoining = joining === session.id;
 
   const when = session.selectedTime
     ? new Date(session.selectedTime).toLocaleDateString('pt-BR', {
@@ -225,13 +217,26 @@ function UpcomingCard({ session, uid }: { session: any; uid?: string | null }) {
     : '—';
 
   return (
-    <View style={up.container}>
+    <TouchableOpacity
+      style={up.container}
+      onPress={() => navigation.navigate('SessionDetail', { sessionId: session.id })}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel="Ver detalhes da sessão agendada"
+    >
       <View style={up.top}>
         <View style={up.iconWrap}>
           <Video size={18} color={colors.primary} strokeWidth={2} />
         </View>
         <View style={up.info}>
-          <Text style={up.category}>{(session.category ?? '—').toUpperCase()}</Text>
+          <View style={up.titleRow}>
+            <Text style={up.category}>{(session.category ?? '—').toUpperCase()}</Text>
+            <View style={[up.badge, { backgroundColor: `${statusColor}18` }]}>
+              <Text style={[up.badgeText, { color: statusColor }]}>
+                {sessionStatusLabel(status)}
+              </Text>
+            </View>
+          </View>
           <View style={up.metaRow}>
             <Clock size={11} color={colors.textMutedValue} strokeWidth={2} />
             <Text style={up.meta}>{when}</Text>
@@ -252,17 +257,21 @@ function UpcomingCard({ session, uid }: { session: any; uid?: string | null }) {
 
       <TouchableOpacity
         style={[up.joinBtn, !decision.canJoin && up.joinBtnDisabled]}
-        disabled={!decision.canJoin}
-        onPress={() => navigation.navigate('Session', { sessionId: session.id })}
+        disabled={!decision.canJoin || isJoining}
+        onPress={() => join(session)}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityState={{ disabled: !decision.canJoin }}
+        accessibilityState={{ disabled: !decision.canJoin, busy: isJoining }}
       >
-        <Text style={[up.joinText, !decision.canJoin && up.joinTextDisabled]}>
-          {describeJoinReason(decision)}
-        </Text>
+        {isJoining ? (
+          <ActivityIndicator size="small" color="#FFF" />
+        ) : (
+          <Text style={[up.joinText, !decision.canJoin && up.joinTextDisabled]}>
+            {describeJoinReason(decision)}
+          </Text>
+        )}
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -285,11 +294,28 @@ const up = StyleSheet.create({
     justifyContent: 'center',
   },
   info: { flex: 1, gap: 2 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
   category: {
     fontSize: typography.size.sm,
     fontWeight: typography.weight.black,
     color: colors.text,
     letterSpacing: 0.3,
+  },
+  badge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: typography.weight.black,
+    letterSpacing: 0.5,
   },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   meta: { fontSize: 11, color: colors.textMutedValue, fontWeight: typography.weight.medium },
@@ -411,8 +437,8 @@ function EmptyState() {
 function SessionCard({ session, uid }: { session: any; uid?: string | null }) {
   const navigation = useNavigation<any>();
   const status      = session.status ?? 'completed';
-  const statusLabel = STATUS_LABEL[status] ?? status.toUpperCase();
-  const statusColor = STATUS_COLOR[status] ?? '#9CA3AF';
+  const statusLabel = sessionStatusLabel(status);
+  const statusColor = sessionStatusColor(status);
   const counterpart = getCounterpart(session, uid);
 
   const duration = session.duration
