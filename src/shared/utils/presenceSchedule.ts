@@ -69,5 +69,6 @@ export function decidePresenceAction(
 
   if (isFg && !wasFg) return 'start'; // montou em foreground / voltou do background
   if (!isFg && wasFg) return 'touch'; // foi para background: última marca + stop
+  if (prev === null) return 'stop'; // montou fora de foco: garante interval parado
   return 'none'; // active→active ou background→inactive: nada muda
 }
