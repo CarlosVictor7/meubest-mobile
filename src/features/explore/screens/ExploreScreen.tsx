@@ -335,6 +335,7 @@ export function ExploreScreen() {
           params: {
             category,
             directedSessionId: sessionId,
+            listenerId: listener.uid,
             listenerName: listener.publicName,
           },
         });

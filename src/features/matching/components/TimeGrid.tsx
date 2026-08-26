@@ -14,21 +14,36 @@ interface TimeGridProps {
   times: readonly string[];
   selected: ReadonlySet<string>;
   onToggle: (time: string) => void;
+  /** Horários que não podem ser escolhidos (ex.: já passaram hoje). */
+  disabled?: ReadonlySet<string>;
 }
 
-export function TimeGrid({ times, selected, onToggle }: TimeGridProps) {
+export function TimeGrid({ times, selected, onToggle, disabled }: TimeGridProps) {
   return (
     <View style={styles.grid}>
       {times.map((time) => {
         const isSelected = selected.has(time);
+        const isDisabled = disabled?.has(time) ?? false;
         return (
           <TouchableOpacity
             key={time}
-            style={[styles.chip, isSelected && styles.chipActive]}
+            style={[
+              styles.chip,
+              isSelected && styles.chipActive,
+              isDisabled && styles.chipDisabled,
+            ]}
             onPress={() => onToggle(time)}
             activeOpacity={0.8}
+            disabled={isDisabled}
+            accessibilityState={{ disabled: isDisabled, selected: isSelected }}
           >
-            <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+            <Text
+              style={[
+                styles.chipText,
+                isSelected && styles.chipTextActive,
+                isDisabled && styles.chipTextDisabled,
+              ]}
+            >
               {time}
             </Text>
           </TouchableOpacity>
@@ -60,6 +75,15 @@ const styles = StyleSheet.create({
   chipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+  },
+  chipDisabled: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    opacity: 0.5,
+  },
+  chipTextDisabled: {
+    color: colors.textMutedValue,
+    textDecorationLine: 'line-through',
   },
   chipText: {
     fontSize: typography.size.xs,

@@ -15,16 +15,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { 
-  ArrowLeft, 
-  Calendar as CalendarIcon, 
-  Clock, 
-  Sparkles, 
-  User, 
-  Search, 
-  Star, 
-  ChevronRight, 
-  CheckCircle2, 
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import {
+  ArrowLeft,
+  Calendar as CalendarIcon,
+  Clock,
+  Sparkles,
+  User,
+  Search,
+  Star,
+  ChevronRight,
+  Send,
   X,
   MapPin,
   Smile,
@@ -40,8 +42,10 @@ import { SESSION_THEMES } from '@constants/config';
 import { getDisplayName, getInitial, getPublicExploreName } from '@shared/utils/displayName';
 import { canActAsListener } from '@shared/utils/listener';
 import { localDateKey } from '@shared/utils/availability';
+import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 import { DayStrip } from '../components/DayStrip';
 import { TimeGrid } from '../components/TimeGrid';
+import { buildSelectedTime, getDeviceTimeZone, isSlotInPast } from '../utils/scheduleTime';
 
 const { width, height } = Dimensions.get('window');
 
@@ -193,7 +197,31 @@ export function ScheduleMatchScreen() {
     return arr;
   }, []);
 
-  // ── Confirmar Agendamento e Salvar no Firestore ─────────────────────────
+  // ── Slots que já passaram no dia escolhido (não dá para solicitar o passado)
+  const selectedDateKey = selectedDateObj ? localDateKey(selectedDateObj) : null;
+  const pastTimes = useMemo(() => {
+    if (!selectedDateKey) return new Set<string>();
+    const now = Date.now();
+    return new Set(DEFAULT_TIMES.filter((t) => isSlotInPast(selectedDateKey, t, now)));
+  }, [selectedDateKey]);
+
+  /** Nome público de quem vai receber a solicitação (ou o texto do modo aleatório). */
+  const requestTargetName =
+    bookingMode === 'specific' && selectedVolunteer
+      ? getPublicExploreName(selectedVolunteer, 'o acolhedor')
+      : 'um acolhedor disponível';
+
+  const goToExplore = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Mesma lógica do card da Home: Android → rota do HomeStack; iOS → aba própria.
+    if (FINANCIAL_FEATURES_ENABLED) {
+      navigation.navigate('Explore');
+    } else {
+      navigation.navigate('ExploreTab');
+    }
+  };
+
+  // ── Enviar SOLICITAÇÃO de agendamento (status pending até o aceite via API)
   const handleConfirmBooking = async () => {
     if (!user || !selectedDateObj || !selectedTimeStr) {
       Alert.alert('Erro', 'Por favor, preencha todos os campos obrigatórios.');
@@ -205,14 +233,20 @@ export function ScheduleMatchScreen() {
       return;
     }
 
+    // Instante ISO UTC a partir do dia + hora de parede do device.
+    const isoDateString = buildSelectedTime(localDateKey(selectedDateObj), selectedTimeStr);
+    if (!isoDateString) {
+      Alert.alert('Erro', 'Data ou horário inválido. Escolha novamente.');
+      return;
+    }
+    if (Date.parse(isoDateString) <= Date.now()) {
+      Alert.alert('Horário já passou', 'Escolha um horário mais à frente.');
+      setSelectedTimeStr(null);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      // Monta data final com hora selecionada
-      const finalDate = new Date(selectedDateObj);
-      const [hours, minutes] = selectedTimeStr.split(':');
-      finalDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-      const isoDateString = finalDate.toISOString();
-
       const sessionData = {
         speakerId: user.uid,
         speakerEmail: user.email || '',
@@ -228,6 +262,8 @@ export function ScheduleMatchScreen() {
         createdAt: serverTimestamp(),
         scheduledTimes: [isoDateString],
         selectedTime: isoDateString,
+        // Fuso IANA do solicitante — a API monta a copy no fuso certo.
+        scheduledTz: getDeviceTimeZone(),
         type: 'scheduled',
         schedulingMode: bookingMode,
         // Lista de bloqueados do speaker para filtro no lado do listener
@@ -237,8 +273,8 @@ export function ScheduleMatchScreen() {
       await addDoc(collection(db, 'sessions'), sessionData);
 
       Alert.alert(
-        'Sucesso 🎉',
-        'Seu acolhimento foi agendado! Ele aparecerá em "Próximas Sessões" na sua tela inicial.',
+        'Solicitação enviada',
+        `Aguardando confirmação de ${requestTargetName}. Você será avisado(a) quando responder — acompanhe em "Próximas Sessões".`,
         [
           { 
             text: 'OK', 
@@ -255,7 +291,7 @@ export function ScheduleMatchScreen() {
       );
     } catch (error) {
       console.error('Error saving scheduled session:', error);
-      Alert.alert('Erro', 'Não foi possível salvar o seu agendamento no momento.');
+      Alert.alert('Erro', 'Não foi possível enviar a sua solicitação no momento.');
     } finally {
       setIsSubmitting(false);
     }
@@ -346,6 +382,38 @@ export function ScheduleMatchScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Card Explorar — versão compacta do hero da Home (mesmo gradiente,
+              ícone e CTA branco). Leva para a descoberta de acolhedores. */}
+          <TouchableOpacity
+            style={[styles.exploreCard, shadows.primary]}
+            onPress={goToExplore}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Explorar acolhedores disponíveis"
+          >
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.exploreGradient}
+            >
+              <View style={styles.exploreGlow} pointerEvents="none" />
+              <View style={styles.exploreIconWrap}>
+                <Compass size={24} color={colors.textInverted} strokeWidth={2} />
+              </View>
+              <View style={styles.exploreTextBox}>
+                <Text style={styles.exploreTitle}>EXPLORAR ACOLHEDORES</Text>
+                <Text style={styles.exploreSubtitle} numberOfLines={2}>
+                  Veja perfis e escolha com quem falar.
+                </Text>
+                <View style={styles.exploreCta}>
+                  <Text style={styles.exploreCtaText}>VER ACOLHEDORES</Text>
+                  <ChevronRight size={14} color={colors.primary} strokeWidth={2.8} />
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </ScrollView>
       )}
 
@@ -622,22 +690,33 @@ export function ScheduleMatchScreen() {
                 <TimeGrid
                   times={DEFAULT_TIMES}
                   selected={selectedTimeStr ? new Set([selectedTimeStr]) : new Set()}
+                  disabled={pastTimes}
                   onToggle={(time) =>
                     setSelectedTimeStr((prev) => (prev === time ? null : time))
                   }
                 />
+                {pastTimes.size === DEFAULT_TIMES.length && (
+                  <Text style={styles.noSlotsText}>
+                    Todos os horários de hoje já passaram — escolha outro dia.
+                  </Text>
+                )}
               </View>
             )}
 
-            {/* Resumo e Botão de Envio */}
+            {/* Aviso de solicitação + Botão de Envio. Nada de "confirmado":
+                a sessão só existe de verdade depois do aceite via API. */}
             <View style={styles.confirmSection}>
               {selectedDateObj && selectedTimeStr && (
-                <View style={styles.summaryBox}>
-                  <CheckCircle2 size={18} color="#166534" />
-                  <Text style={styles.summaryText}>
-                    Confirmado para{' '}
-                    <Text style={{fontWeight: 'bold'}}>{selectedDateObj.getDate()}/{selectedDateObj.getMonth() + 1}</Text> às{' '}
-                    <Text style={{fontWeight: 'bold'}}>{selectedTimeStr}</Text>.
+                <View style={styles.requestNotice}>
+                  <Send size={16} color={colors.primary} />
+                  <Text style={styles.requestNoticeText}>
+                    Será enviada uma solicitação para{' '}
+                    <Text style={styles.requestNoticeStrong}>{requestTargetName}</Text>
+                    {' '}para{' '}
+                    <Text style={styles.requestNoticeStrong}>
+                      {selectedDateObj.getDate()}/{selectedDateObj.getMonth() + 1} às {selectedTimeStr}
+                    </Text>
+                    . A sessão só será confirmada após o aceite.
                   </Text>
                 </View>
               )}
@@ -655,7 +734,7 @@ export function ScheduleMatchScreen() {
                 {isSubmitting ? (
                   <ActivityIndicator size="small" color={colors.textInverted} />
                 ) : (
-                  <Text style={styles.submitBtnText}>CONFIRMAR AGENDAMENTO</Text>
+                  <Text style={styles.submitBtnText}>ENVIAR SOLICITAÇÃO</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1143,21 +1222,97 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     gap: spacing.md,
   },
-  summaryBox: {
+  requestNotice: {
     flexDirection: 'row',
-    backgroundColor: '#F0FDF4', // verde claro
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1.5,
-    borderColor: '#DCFCE7',
+    borderColor: colors.primaryLight,
     borderRadius: borderRadius.md,
     padding: spacing.md,
-    gap: spacing.xs,
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  requestNoticeText: {
+    flex: 1,
+    fontSize: typography.size.xs,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+    lineHeight: 18,
+  },
+  requestNoticeStrong: {
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+  },
+  noSlotsText: {
+    fontSize: typography.size.xs,
+    color: colors.textMutedValue,
+    fontWeight: typography.weight.medium,
+    marginTop: spacing.xs,
+    paddingLeft: spacing.xs,
+  },
+
+  // Card Explorar compacto (step 0) — mesmo padrão visual do hero da Home
+  exploreCard: {
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  exploreGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 120,
+    padding: spacing.md,
+    overflow: 'hidden',
+  },
+  exploreGlow: {
+    position: 'absolute',
+    right: -50,
+    top: -60,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  exploreIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  summaryText: {
+  exploreTextBox: { flex: 1, gap: 4 },
+  exploreTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.black,
+    color: colors.textInverted,
+    letterSpacing: 0.4,
+  },
+  exploreSubtitle: {
     fontSize: typography.size.xs,
-    color: '#166534',
-    fontWeight: typography.weight.semibold,
+    lineHeight: 16,
+    color: 'rgba(255,255,255,0.86)',
+    fontWeight: typography.weight.medium,
+  },
+  exploreCta: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    marginTop: 4,
+  },
+  exploreCtaText: {
+    fontSize: 10,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.8,
   },
   submitBtn: {
     backgroundColor: colors.primary,
