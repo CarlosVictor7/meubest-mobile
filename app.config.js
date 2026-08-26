@@ -4,7 +4,7 @@ module.exports = {
   name: IS_DEV ? 'Meu Best (Dev)' : 'Meu Best',
   slug: 'meubest',
   scheme: 'meubest',
-  version: '1.1.1',
+  version: '1.1.2',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
