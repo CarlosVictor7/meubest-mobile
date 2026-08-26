@@ -26,6 +26,7 @@ import {
   Trash2,
   Camera,
   Compass,
+  HelpCircle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -34,6 +35,7 @@ import type { ProfileStackParamList } from '@navigation/types';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { ExplorePhotoManager } from '@features/profile/components/ExplorePhotoManager';
 import { TabHeader } from '@shared/components/TabHeader';
+import { HowItWorksModal } from '@shared/components/HowItWorksModal';
 import { Avatar, BOTTOM_NAV_SCROLL_PAD } from '@shared/components';
 import {
   pickProfileImage,
@@ -71,6 +73,7 @@ export function ProfileScreen() {
 
   // Estados locais para edição
   // `preferredName` é o nome PÚBLICO editável. O `name` do provider nunca é tocado aqui.
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [preferredName, setPreferredName] = useState('');
   const [bio, setBio] = useState('');
   const [pixKey, setPixKey] = useState('');
@@ -622,6 +625,20 @@ export function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* "Como funciona?" — veio da Home (26/08); mesmo modal, agora no Menu */}
+            <TouchableOpacity
+              style={styles.supportRow}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setHowItWorksOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Como funciona o Meu Best"
+            >
+              <HelpCircle size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.supportRowText}>Como funciona?</Text>
+            </TouchableOpacity>
+
             {/* Links de suporte */}
             <TouchableOpacity
               style={styles.supportRow}
@@ -655,6 +672,8 @@ export function ProfileScreen() {
         {/* Espaçamento para a BottomNav fixa */}
         <View style={{ height: BOTTOM_NAV_SCROLL_PAD + 16 }} />
       </ScrollView>
+
+      <HowItWorksModal visible={howItWorksOpen} onClose={() => setHowItWorksOpen(false)} />
     </View>
   );
 }

@@ -33,6 +33,9 @@ export type HomeStackParamList = {
     category: string;
     /** Chamada direcionada criada pelo Explorar — a sessão já existe. */
     directedSessionId?: string;
+    /** Alvo da chamada direcionada — permite "tentar novamente" criar NOVA sessão. */
+    listenerId?: string;
+    /** Nome PÚBLICO do alvo ("Ana S."). */
     listenerName?: string;
   };
   /**

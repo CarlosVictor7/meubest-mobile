@@ -17,6 +17,8 @@ import { db } from '@shared/services/firebase';
 import { useAuth } from '@features/auth/hooks/useAuth';
 import { colors, spacing, borderRadius, typography, shadows } from '@constants/theme';
 import { getPublicExploreName } from '@shared/utils/displayName';
+import { createDirectedSession } from '@features/explore/services/directedSession';
+import { directedSearchTitle, directedTimeoutTitle } from '../utils/directedSearch';
 
 // Frases motivacionais rotativas
 const COMFORT_PHRASES = [
@@ -31,16 +33,27 @@ const COMFORT_PHRASES = [
 export function MatchSearchScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { category, directedSessionId, listenerName } = (route.params || {
+  const { category, directedSessionId, listenerId, listenerName } = (route.params || {
     category: 'Conversa',
-  }) as { category: string; directedSessionId?: string; listenerName?: string };
+  }) as {
+    category: string;
+    directedSessionId?: string;
+    listenerId?: string;
+    listenerName?: string;
+  };
 
   /**
-   * Chamada direcionada: a sessão JÁ FOI criada pelo Explorar, com
-   * `listenerId` preenchido. Aqui só acompanhamos o aceite — criar outra
-   * sessão duplicaria o chamado.
+   * Chamada direcionada: a PRIMEIRA sessão já foi criada pelo Explorar, com
+   * `listenerId` preenchido — só acompanhamos o aceite (criar outra duplicaria
+   * o chamado). Depois de um timeout ela fica `cancelled`; "tentar novamente"
+   * precisa criar uma NOVA sessão direcionada para a mesma pessoa, senão o
+   * acolhedor nunca veria o segundo chamado.
    */
   const isDirected = typeof directedSessionId === 'string' && directedSessionId.length > 0;
+  /** Sessão direcionada ainda não consumida (só a primeira busca a reaproveita). */
+  const pendingDirectedIdRef = useRef<string | null>(isDirected ? directedSessionId! : null);
+  /** Alvo da chamada direcionada — do param ou lido do doc da sessão. */
+  const directedListenerIdRef = useRef<string | null>(listenerId ?? null);
   
   const { user, profile } = useAuth();
   const [status, setStatus] = useState<'searching' | 'timeout' | 'error'>('searching');
@@ -132,22 +145,47 @@ export function MatchSearchScreen() {
         createdAt: serverTimestamp(),
       };
 
-      // Chamada direcionada reaproveita a sessão criada pelo Explorar.
-      const sessionId = isDirected
-        ? (directedSessionId as string)
-        : (await addDoc(collection(db, 'sessions'), sessionData)).id;
+      let sessionId: string;
+      if (isDirected) {
+        if (pendingDirectedIdRef.current) {
+          // Primeira busca: reaproveita a sessão criada pelo Explorar.
+          sessionId = pendingDirectedIdRef.current;
+          pendingDirectedIdRef.current = null;
+          console.log(`[MatchSearch] Acompanhando sessão direcionada: ${sessionId}`);
+        } else {
+          // Retry: a anterior foi cancelada no timeout — nova sessão para a mesma pessoa.
+          const targetId = directedListenerIdRef.current;
+          if (!targetId) {
+            console.log('[MatchSearch] Retry direcionado sem listenerId — abortando');
+            setStatus('error');
+            return;
+          }
+          sessionId = await createDirectedSession({
+            speakerUid: user.uid,
+            speakerEmail: user.email,
+            speakerProfile: profile,
+            listenerId: targetId,
+            listenerName,
+            category,
+          });
+          console.log(`[MatchSearch] Nova sessão direcionada (retry): ${sessionId}`);
+        }
+      } else {
+        sessionId = (await addDoc(collection(db, 'sessions'), sessionData)).id;
+        console.log(`[MatchSearch] Sessão criada: ${sessionId}`);
+      }
 
       sessionIdRef.current = sessionId;
-      console.log(
-        `[MatchSearch] ${isDirected ? 'Acompanhando sessão direcionada' : 'Sessão criada'}: ${sessionId}`
-      );
 
       // Inicia a escuta da sessão em tempo real via onSnapshot
       console.log('[MatchSearch] Listening session...');
       unsubscribeRef.current = onSnapshot(doc(db, 'sessions', sessionId), (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          
+          if (isDirected && typeof data.listenerId === 'string' && data.listenerId) {
+            directedListenerIdRef.current = data.listenerId;
+          }
+
           // Se o apoiador aceitou (status mudou para active e tem listenerId)
           if (data.status === 'active' && data.listenerId) {
             console.log(`[MatchSearch] Match accepted by supporter: ${data.listenerId}`);
@@ -254,8 +292,10 @@ export function MatchSearchScreen() {
           </View>
         </View>
 
-        {/* Título e tema */}
-        <Text style={styles.title}>BUSCANDO UM ACOLHEDOR</Text>
+        {/* Título e tema — direcionada mostra o PRIMEIRO NOME público do alvo */}
+        <Text style={styles.title}>
+          {isDirected ? directedSearchTitle(listenerName) : 'BUSCANDO UM ACOLHEDOR'}
+        </Text>
         <View style={styles.tag}>
           <Heart size={12} color={colors.primary} fill={colors.primary} />
           <Text style={styles.tagText}>{category.toUpperCase()}</Text>
@@ -265,7 +305,9 @@ export function MatchSearchScreen() {
         <View style={styles.progressContainer}>
           <View style={[styles.progressBar, { width: progressPercent as any }]} />
         </View>
-        <Text style={styles.timerText}>Procurando voluntários... ({secondsElapsed}s)</Text>
+        <Text style={styles.timerText}>
+          {isDirected ? 'Aguardando resposta' : 'Procurando voluntários'}... ({secondsElapsed}s)
+        </Text>
 
         {/* Frases motivacionais rotativas com Animação sutil */}
         <View style={styles.phraseContainer}>
@@ -295,11 +337,23 @@ export function MatchSearchScreen() {
           <Zap size={38} color={colors.primary} fill={colors.primary} />
         </View>
 
-        <Text style={styles.title}>TODOS OS NOSSOS VOLUNTÁRIOS ESTÃO OCUPADOS</Text>
-        <Text style={styles.subtitle}>
-          Nossa rede é inteiramente formada por voluntários acolhedores. No momento, todos eles estão em atendimentos ou indisponíveis.{'\n'}{'\n'}
-          Respire fundo, tente novamente em alguns instantes ou agende uma conversa para mais tarde!
-        </Text>
+        {isDirected ? (
+          <>
+            <Text style={styles.title}>{directedTimeoutTitle(listenerName)}</Text>
+            <Text style={styles.subtitle}>
+              Pode estar em outra conversa ou longe do celular agora.{'\n'}{'\n'}
+              Tente de novo em instantes, escolha outro acolhedor no Explorar ou agende uma conversa para mais tarde.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>TODOS OS NOSSOS VOLUNTÁRIOS ESTÃO OCUPADOS</Text>
+            <Text style={styles.subtitle}>
+              Nossa rede é inteiramente formada por voluntários acolhedores. No momento, todos eles estão em atendimentos ou indisponíveis.{'\n'}{'\n'}
+              Respire fundo, tente novamente em alguns instantes ou agende uma conversa para mais tarde!
+            </Text>
+          </>
+        )}
 
         <View style={styles.actionCol}>
           <TouchableOpacity

@@ -39,6 +39,21 @@ describe('toExploreListenersParams', () => {
     });
   });
 
+  it('quick-toggle do header ("DISPONÍVEIS AGORA") é o MESMO onlyOnline da sheet → onlyReachable', () => {
+    // O header e a sheet compartilham o estado; o param enviado não muda.
+    const fromHeader = toExploreListenersParams({ onlyOnline: true });
+    const fromSheet = toExploreListenersParams({ onlyOnline: true, search: '', state: '' });
+    expect(fromHeader).toEqual(fromSheet);
+    expect(fromHeader).toEqual({
+      search: undefined,
+      state: undefined,
+      theme: undefined,
+      religion: undefined,
+      ageRange: undefined,
+      onlyReachable: true,
+    });
+  });
+
   it('strings vazias e onlyOnline=false são omitidos', () => {
     const p = toExploreListenersParams({
       search: '   ',

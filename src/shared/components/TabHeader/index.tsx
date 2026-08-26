@@ -3,7 +3,9 @@
  *
  * Regras de exibição:
  * - Toggle Online/Offline → só aparece quando activeRole === 'listener' (modo Apoiar)
- * - "Vire a chave aqui!" + "COMO FUNCIONA?" → centralizado, só no modo Apoiar
+ * - Seta curva discreta ACIMA do toggle Desabafar|Acolher, só quando o toggle
+ *   existe (26/08: substituiu o bloco "Vire a chave aqui!" + "COMO FUNCIONA?",
+ *   que ocupava ~90 px abaixo do toggle; "Como funciona" vive no Menu)
  * - Modo Ouvir: apenas SegmentedControl + NoticeCard (sem chave)
  */
 import React, { useState, useCallback, useEffect } from 'react';
@@ -11,13 +13,12 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
-  ScrollView,
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, X, ShieldCheck } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
+import { Bell } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, updateDoc, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
@@ -52,35 +53,6 @@ const ROLE_OPTIONS = [
   },
 ];
 
-// ─── Conteúdo do modal "Como funciona?" ──────────────────────────────────────
-const HOW_IT_WORKS = [
-  {
-    icon: '💬',
-    title: 'Desabafar',
-    body: 'Você busca alguém com quem desabafar. Conectamos você a um voluntário disponível no momento.',
-  },
-  {
-    icon: '❤️',
-    title: 'Acolher',
-    body: 'Você indica que está disponível para ouvir alguém. Ative sua chave Online quando puder acolher.',
-  },
-  {
-    icon: '🔑',
-    title: 'A chave Online',
-    body: 'Ao ativar, você aparece como disponível na plataforma. Desative quando precisar de pausa.',
-  },
-  {
-    icon: '🤝',
-    title: 'Somos voluntários',
-    body: 'O Meu Best é uma rede de apoio voluntário — não substitui acompanhamento profissional.',
-  },
-  {
-    icon: '🆘',
-    title: 'Emergências',
-    body: 'Em crise, procure ajuda imediata: SAMU 192 ou CVV 188 (24h, gratuito).',
-  },
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface TabHeaderProps {
@@ -106,7 +78,6 @@ export function TabHeader({
   // ── Estado local do papel — atualiza UI imediatamente ────────────
   const [activeRole, setActiveRole] = useState<string>(profile?.role ?? 'speaker');
   const [isOnline, setIsOnline]     = useState(profile?.isOnline ?? false);
-  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   // Estados para as notificações (Task 8)
   const [notificationsVisible, setNotificationsVisible] = useState(false);
@@ -312,6 +283,28 @@ export function TabHeader({
       {/* ── Controles de papel ───────────────────────────────────── */}
       {!hideControls && (
         <View style={styles.controls}>
+          {/* Seta curva discreta apontando para o toggle — vetorial, sem
+              texto. Só existe junto do toggle (hideControls oculta os dois). */}
+          <View style={styles.arrowWrap} pointerEvents="none" accessible={false}>
+            <Svg width={44} height={26} viewBox="0 0 44 26" style={styles.arrow}>
+              <Path
+                d="M4 3 C 4 15, 12 21, 27 21"
+                stroke={colors.primary}
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                fill="none"
+              />
+              <Path
+                d="M21 15 L 27 21 L 21 26"
+                stroke={colors.primary}
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </Svg>
+          </View>
+
           {/* SegmentedControl — Ouvir / Apoiar */}
           <SegmentedControl
             options={ROLE_OPTIONS}
@@ -336,20 +329,6 @@ export function TabHeader({
               </View>
             </View>
           )}
-
-          {/* "Vire a chave aqui!" + "COMO FUNCIONA?" — sempre visíveis */}
-          <View style={styles.hintBlock}>
-            <Text style={styles.hintText}>Vire a chave aqui!</Text>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setHowItWorksOpen(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.howLink}>COMO FUNCIONA?</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       )}
 
@@ -360,62 +339,6 @@ export function TabHeader({
         uid={user?.uid}
         profile={profile}
       />
-
-      {/* ── Modal "Como funciona?" ───────────────────────────────── */}
-      <Modal
-        visible={howItWorksOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setHowItWorksOpen(false)}
-      >
-        <TouchableOpacity
-          style={modal.overlay}
-          activeOpacity={1}
-          onPress={() => setHowItWorksOpen(false)}
-        >
-          <View style={modal.sheet} onStartShouldSetResponder={() => true}>
-            <View style={modal.handle} />
-
-            <View style={modal.topRow}>
-              <View style={modal.iconWrap}>
-                <ShieldCheck size={22} color={colors.primary} />
-              </View>
-              <Text style={modal.title}>Como funciona?</Text>
-              <TouchableOpacity
-                onPress={() => setHowItWorksOpen(false)}
-                style={modal.closeBtn}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              contentContainerStyle={modal.content}
-              showsVerticalScrollIndicator={false}
-            >
-              {HOW_IT_WORKS.map((item, i) => (
-                <View key={i} style={modal.item}>
-                  <Text style={modal.itemIcon}>{item.icon}</Text>
-                  <View style={modal.itemText}>
-                    <Text style={modal.itemTitle}>{item.title}</Text>
-                    <Text style={modal.itemBody}>{item.body}</Text>
-                  </View>
-                </View>
-              ))}
-
-              <View style={modal.emergency}>
-                <Text style={modal.emergencyText}>
-                  🆘 Em crise?{' '}
-                  <Text style={modal.emergencyHighlight}>SAMU 192</Text>
-                  {' '}ou{' '}
-                  <Text style={modal.emergencyHighlight}>CVV 188</Text>
-                  {' '}(gratuito, 24h)
-                </Text>
-              </View>
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       <NotificationsModal
         visible={notificationsVisible}
@@ -531,28 +454,13 @@ const styles = StyleSheet.create({
   },
   onlineLabelActive: { color: '#22C55E' },
 
-  // "Vire a chave aqui!" + "COMO FUNCIONA?" — sempre visíveis
-  hintBlock: {
+  // Seta curva acima do toggle — discreta (opacity 0.6), sem ocupar o espaço
+  // que o bloco de texto ocupava.
+  arrowWrap: {
     alignItems: 'center',
-    gap: spacing.xs,
+    marginBottom: -spacing.xs,
   },
-  hintText: {
-    fontSize: 20,
-    fontStyle: 'italic',
-    fontWeight: '400',
-    color: colors.primary,
-    lineHeight: 26,
-    textAlign: 'center',
-  },
-  howLink: {
-    fontSize: typography.size.xs,
-    fontWeight: typography.weight.black,
-    color: colors.textMutedValue,
-    letterSpacing: typography.tracking.wider,
-    textDecorationLine: 'underline',
-    textDecorationColor: colors.textMutedValue,
-    textAlign: 'center',
-  },
+  arrow: { opacity: 0.6 },
 
   // Faixa de aviso (NoticeStrip)
   noticeWrap: {
@@ -584,95 +492,3 @@ const styles = StyleSheet.create({
   },
 });
 
-// ─── Modal Styles ─────────────────────────────────────────────────────────────
-const modal = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(26,26,26,0.55)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl + 16,
-    paddingTop: spacing.sm,
-    maxHeight: '80%',
-  },
-  handle: {
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    flex: 1,
-    fontSize: typography.size.lg,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-    letterSpacing: typography.tracking.tight,
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  content: { gap: spacing.lg },
-  item: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'flex-start',
-  },
-  itemIcon: { fontSize: 24, lineHeight: 28 },
-  itemText: { flex: 1, gap: 4 },
-  itemTitle: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.black,
-    color: colors.text,
-    letterSpacing: typography.tracking.tight,
-  },
-  itemBody: {
-    fontSize: typography.size.sm,
-    color: colors.textMutedValue,
-    fontWeight: typography.weight.medium,
-    lineHeight: 20,
-  },
-  emergency: {
-    backgroundColor: '#FFFAED',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderLeftWidth: 3,
-    borderLeftColor: '#F4C430',
-    marginTop: spacing.sm,
-  },
-  emergencyText: {
-    fontSize: typography.size.sm,
-    color: '#6B5000',
-    fontWeight: typography.weight.medium,
-    lineHeight: 20,
-  },
-  emergencyHighlight: {
-    fontWeight: typography.weight.black,
-    color: '#9A7300',
-  },
-});

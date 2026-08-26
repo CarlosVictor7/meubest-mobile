@@ -5,6 +5,7 @@ import { doc, updateDoc, deleteField, deleteDoc } from 'firebase/firestore';
 import { runLogoutCleanup } from '../utils/logoutCleanup';
 import { appConfig } from '@constants/appConfig';
 import { clearPendingNotificationRoute } from '../../../navigation/notificationNavigation';
+import { useUserSessionsStore } from '@features/session/stores/userSessionsStore';
 
 /**
  * `DELETE {apiUrl}/me/photos` com Bearer idToken. Best-effort: qualquer falha
@@ -61,6 +62,8 @@ export function useAuth() {
       clearPendingNotificationRoute();
       await signOut(auth);
       useAuthStore.getState().clear();
+      // Espelho das sessões (modal de solicitação) não pode sobreviver à conta.
+      useUserSessionsStore.getState().clear();
     } catch (error) {
       console.error('[useAuth] Logout error:', error);
       throw error;

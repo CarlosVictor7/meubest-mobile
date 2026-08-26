@@ -14,8 +14,13 @@
  *                               e só então mostra o modal — reutilizamos essa
  *                               defesa em vez de duplicá-la.
  *
- *   scheduled_session_created  → SessionDetail da sessão.
+ *   scheduled_session_created  → SessionDetail da sessão (o modal de
+ *                               solicitação também aparece pelo snapshot).
  *   scheduled_session_reminder → SessionDetail da sessão.
+ *   session_accepted / rejected / cancelled / expired / started
+ *                              → SessionDetail da sessão. NUNCA a VideoRoom:
+ *                               o ENTRAR do detalhe passa pelo `/join`, que
+ *                               é quem valida a janela.
  *                               (Se a sessão não existir mais, a própria tela
  *                               trata — fallback seguro para a lista.)
  *
@@ -30,6 +35,17 @@
 export type NotificationRoute =
   | { kind: 'home' }
   | { kind: 'sessionDetail'; sessionId: string };
+
+/** Tipos de push que apontam para o detalhe de UMA sessão. */
+export const SESSION_DETAIL_NOTIFICATION_TYPES = [
+  'scheduled_session_created',
+  'scheduled_session_reminder',
+  'session_accepted',
+  'session_rejected',
+  'session_cancelled',
+  'session_expired',
+  'session_started',
+] as const;
 
 export function buildNotificationRoute(data: unknown): NotificationRoute | null {
   if (!data || typeof data !== 'object') return null;
@@ -50,6 +66,11 @@ export function buildNotificationRoute(data: unknown): NotificationRoute | null 
 
     case 'scheduled_session_created':
     case 'scheduled_session_reminder':
+    case 'session_accepted':
+    case 'session_rejected':
+    case 'session_cancelled':
+    case 'session_expired':
+    case 'session_started':
       return hasSessionId
         ? { kind: 'sessionDetail', sessionId: sessionId as string }
         : null;

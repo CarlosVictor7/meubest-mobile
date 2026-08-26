@@ -18,7 +18,7 @@
  */
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
-import { getDisplayName } from '@shared/utils/displayName';
+import { getPublicExploreName } from '@shared/utils/displayName';
 import type { UserProfile } from '@models/user';
 
 export interface CreateDirectedSessionParams {
@@ -38,7 +38,8 @@ export async function createDirectedSession(
   const sessionData = {
     speakerId: params.speakerUid,
     speakerEmail: params.speakerEmail || '',
-    speakerName: getDisplayName(params.speakerProfile, 'Usuário'),
+    // Nome PÚBLICO ("Ana S."): a sessão é lida pelo acolhedor — nunca o nome completo.
+    speakerName: getPublicExploreName(params.speakerProfile, 'Usuário'),
 
     // A diferença que define a chamada direcionada.
     listenerId: params.listenerId,

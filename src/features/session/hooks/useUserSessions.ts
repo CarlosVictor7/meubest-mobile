@@ -29,10 +29,11 @@
  * listas depois de a consulta já as ter trazido — pagando a leitura e jogando
  * fora o resultado.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { collection, query, where, orderBy, limit as fsLimit, onSnapshot } from 'firebase/firestore';
 import { db } from '@shared/services/firebase';
 import { mergeSessions, type SessionLike } from '@features/session/utils/sessionFilters';
+import { useUserSessionsStore } from '@features/session/stores/userSessionsStore';
 
 interface UseUserSessionsResult {
   sessions: SessionLike[];
@@ -96,9 +97,20 @@ export function useUserSessions(
   }, [uid, perQueryLimit]);
 
   const loading = asSpeaker === null || asListener === null;
+  const sessions = useMemo(
+    () => (loading ? [] : mergeSessions(asSpeaker, asListener)),
+    [loading, asSpeaker, asListener]
+  );
+
+  // Publica o snapshot para quem não pode abrir listener próprio (modal de
+  // solicitação no AppTabNavigator). Ver userSessionsStore.
+  useEffect(() => {
+    if (!uid || loading) return;
+    useUserSessionsStore.getState().setSessions(uid, sessions);
+  }, [uid, loading, sessions]);
 
   return {
-    sessions: loading ? [] : mergeSessions(asSpeaker, asListener),
+    sessions,
     loading,
     error: speakerFailed && listenerFailed,
   };

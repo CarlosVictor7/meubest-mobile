@@ -27,6 +27,9 @@ import { useAuth } from '@features/auth/hooks/useAuth';
 import { useIncomingCall } from '@features/session/hooks/useIncomingCall';
 import { usePresence } from '@shared/hooks/usePresence';
 import { IncomingCallModal } from '@features/session/components/IncomingCallModal';
+import { useScheduleRequests } from '@features/session/hooks/useScheduleRequests';
+import { ScheduleRequestModal } from '@features/session/components/ScheduleRequestModal';
+import { formatScheduleWhen } from '@features/session/utils/scheduleFormat';
 import { FINANCIAL_FEATURES_ENABLED } from '@shared/constants/platformFeatures';
 
 // Tab stacks
@@ -137,6 +140,40 @@ export function AppTabNavigator() {
     [acceptSession, navigation]
   );
 
+  // Solicitações de AGENDAMENTO dirigidas a mim — derivadas do snapshot que a
+  // Home já mantém (zero listener novo). Aceitar NÃO abre a sala.
+  const scheduleRequests = useScheduleRequests(user?.uid);
+
+  const handleAcceptSchedule = useCallback(
+    async (sessionId: string) => {
+      const when = formatScheduleWhen(scheduleRequests.request?.selectedTime);
+      try {
+        await scheduleRequests.accept(sessionId);
+        Alert.alert(
+          'Agendamento aceito',
+          when
+            ? `Conversa marcada para ${when.day} às ${when.time}. A sala abre 15 minutos antes — acompanhe em Sessões.`
+            : 'Conversa confirmada. Acompanhe em Sessões.',
+          [{ text: 'OK' }]
+        );
+      } catch (err: any) {
+        Alert.alert('Não foi possível aceitar', err?.message || 'Tente novamente.', [{ text: 'OK' }]);
+      }
+    },
+    [scheduleRequests]
+  );
+
+  const handleRejectSchedule = useCallback(
+    async (sessionId: string) => {
+      try {
+        await scheduleRequests.reject(sessionId);
+      } catch (err: any) {
+        Alert.alert('Não foi possível recusar', err?.message || 'Tente novamente.', [{ text: 'OK' }]);
+      }
+    },
+    [scheduleRequests]
+  );
+
   return (
     <>
       <Tab.Navigator
@@ -167,6 +204,18 @@ export function AppTabNavigator() {
         onAccept={handleAccept}
         onDecline={dismissSession}
       />
+
+      {/* Solicitação de agendamento — só quando NÃO há chamado imediato na tela:
+          o chamado ao vivo tem prioridade sobre um pedido para daqui a dias. */}
+      {incomingSession === null && (
+        <ScheduleRequestModal
+          request={scheduleRequests.request}
+          busy={scheduleRequests.busy}
+          onAccept={handleAcceptSchedule}
+          onReject={handleRejectSchedule}
+          onDismiss={scheduleRequests.dismiss}
+        />
+      )}
     </>
   );
 }
