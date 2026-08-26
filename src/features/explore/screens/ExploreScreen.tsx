@@ -100,6 +100,8 @@ export function ExploreScreen() {
   const [loadError, setLoadError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  /** Total do SERVIDOR para os filtros atuais — não o que já foi paginado. */
+  const [serverTotal, setServerTotal] = useState(0);
 
   const nextOffsetRef = useRef<number | null>(null);
   const hasMoreRef = useRef(false);
@@ -132,6 +134,16 @@ export function ExploreScreen() {
 
   const activeFilterCount = countActiveFilters({ ...filters, search });
 
+  /**
+   * Quick-toggle "DISPONÍVEIS AGORA" do header: o MESMO `onlyOnline` da sheet
+   * (→ `onlyReachable` na API). Mudar o filtro já recomeça a paginação pelo
+   * effect de `filters`. Coerente com o badge do card e com FALAR AGORA.
+   */
+  const toggleOnlyOnline = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setOnlyOnline((v) => !v);
+  }, []);
+
   // ── Pager / fluxos ─────────────────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -154,12 +166,14 @@ export function ExploreScreen() {
       nextOffsetRef.current = page.nextOffset;
       hasMoreRef.current = page.hasMore;
       setHasMore(page.hasMore);
+      setServerTotal(page.total);
       setList(page.items);
     } catch (error) {
       if (loadId !== loadIdRef.current) return;
       console.error('[Explore] Falha ao carregar acolhedores:', error);
       hasMoreRef.current = false;
       setHasMore(false);
+      setServerTotal(0);
       setList([]);
       setLoadError(true);
     } finally {
@@ -180,6 +194,7 @@ export function ExploreScreen() {
       nextOffsetRef.current = page.nextOffset;
       hasMoreRef.current = page.hasMore;
       setHasMore(page.hasMore);
+      setServerTotal(page.total);
       setList((prev) => mergeExplorePages(prev ?? [], page.items));
     } catch (error) {
       if (loadId !== loadIdRef.current) return;
@@ -391,6 +406,21 @@ export function ExploreScreen() {
           <Text style={styles.title}>EXPLORAR</Text>
 
           <TouchableOpacity
+            onPress={toggleOnlyOnline}
+            style={[styles.quickToggle, onlyOnline && styles.quickToggleActive]}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            activeOpacity={0.85}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: onlyOnline }}
+            accessibilityLabel="Somente disponíveis agora"
+          >
+            <View style={[styles.quickDot, onlyOnline && styles.quickDotActive]} />
+            <Text style={[styles.quickToggleText, onlyOnline && styles.quickToggleTextActive]}>
+              DISPONÍVEIS AGORA
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => setFiltersOpen(true)}
             style={styles.iconBtn}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -542,7 +572,7 @@ export function ExploreScreen() {
         onlyOnline={onlyOnline}
         onOnlyOnlineChange={setOnlyOnline}
         onClear={clearFilters}
-        resultCount={total}
+        resultCount={serverTotal}
         hasActiveFilters={activeFilterCount > 0}
       />
 
@@ -586,6 +616,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   filterBadgeText: { fontSize: 9, fontWeight: typography.weight.black, color: '#FFF' },
+
+  // Quick-toggle "DISPONÍVEIS AGORA" — mesmo estado do chip da sheet.
+  quickToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.surface,
+  },
+  quickToggleActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  quickDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(26,26,26,0.25)',
+  },
+  quickDotActive: { backgroundColor: '#7CFFB2' },
+  quickToggleText: {
+    fontSize: 9,
+    fontWeight: typography.weight.black,
+    color: colors.primary,
+    letterSpacing: 0.8,
+  },
+  quickToggleTextActive: { color: '#FFF' },
 
   pagerWrap: { flex: 1 },
   progressPill: {
