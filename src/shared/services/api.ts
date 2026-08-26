@@ -38,6 +38,14 @@ export interface SessionTransitionResponse {
   event?: string;
 }
 
+/** Resposta de `DELETE /me`. */
+export interface DeleteMyAccountResponse {
+  ok: true;
+  deleted: true;
+  /** true quando a conta já tinha sido excluída antes (repetição = no-op 200). */
+  alreadyDeleted?: boolean;
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
 
@@ -111,6 +119,16 @@ export const api = {
     ),
   /** O próprio perfil como terceiros o veem + estado de visibilidade. */
   getExploreMe: (token: string) => request<ExploreMeResponse>('/explore/me', { token }),
+
+  // ─── Conta ───────────────────────────────────────────────────────────────
+  /**
+   * `DELETE /me` — exclusão da conta é SERVER-AUTHORITATIVE: a API marca
+   * `accountStatus:'deleted'`, anonimiza o doc, apaga o Storage e deleta o
+   * Firebase Auth. O app NÃO faz deleteDoc nem `currentUser.delete()`.
+   * Idempotente: repetir devolve 200 com `alreadyDeleted:true`. 401 sem token.
+   */
+  deleteMyAccount: (token: string) =>
+    request<DeleteMyAccountResponse>('/me', { method: 'DELETE', token }),
 
   // ─── Sessão agendada: transições SÓ via API (server-authoritative) ───────
   // Erros: 401 sem token · 403 ator errado · 404 · 409 transição inválida ou

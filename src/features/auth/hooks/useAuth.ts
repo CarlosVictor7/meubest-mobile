@@ -1,32 +1,13 @@
 import { useAuthStore } from '@shared/stores/authStore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@shared/services/firebase';
-import { doc, updateDoc, deleteField, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { runLogoutCleanup } from '../utils/logoutCleanup';
-import { appConfig } from '@constants/appConfig';
+import { runDeleteAccountFlow, ACCOUNT_SCOPED_STORAGE_KEYS } from '../utils/deleteAccountFlow';
+import { api } from '@shared/services/api';
 import { clearPendingNotificationRoute } from '../../../navigation/notificationNavigation';
 import { useUserSessionsStore } from '@features/session/stores/userSessionsStore';
-
-/**
- * `DELETE {apiUrl}/me/photos` com Bearer idToken. Best-effort: qualquer falha
- * (sem rede, API fora, 4xx/5xx) é apenas logada. `fetch` direto de propósito —
- * é a única chamada que precisa sobreviver ao fluxo de exclusão da conta.
- */
-async function deleteRemotePhotosBestEffort(): Promise<void> {
-  try {
-    const idToken = await auth.currentUser?.getIdToken();
-    if (!idToken) return;
-    const response = await fetch(`${appConfig.apiUrl}/me/photos`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    if (!response.ok) {
-      console.warn(`[useAuth] DELETE /me/photos respondeu ${response.status} (seguindo com a exclusão)`);
-    }
-  } catch (error) {
-    console.warn('[useAuth] DELETE /me/photos falhou (seguindo com a exclusão):', error);
-  }
-}
 
 /** Hook conveniente para acessar auth state — padrão igual à web */
 export function useAuth() {
@@ -70,38 +51,30 @@ export function useAuth() {
     }
   };
 
+  /**
+   * Exclusão de conta — SERVER-AUTHORITATIVE (26/08): `DELETE /me`. A API
+   * marca `accountStatus:'deleted'`, anonimiza, apaga o Storage (fotos
+   * inclusive) e deleta o Firebase Auth. O app não faz deleteDoc nem
+   * `currentUser.delete()` — por isso o gate de "login recente" do SDK não se
+   * aplica; 401 da API vira `auth/requires-recent-login` para a UI já existente.
+   * Orquestração pura e testada em `../utils/deleteAccountFlow`.
+   */
   const deleteAccount = async () => {
     try {
       if (!user) throw new Error('Usuário não autenticado');
 
-      const lastSignIn = auth.currentUser?.metadata.lastSignInTime;
-      const diffMs = lastSignIn ? (Date.now() - new Date(lastSignIn).getTime()) : Infinity;
-      
-      // Se o login foi há mais de 5 minutos, a exclusão da conta do Firebase Auth quase certamente falhará com requires-recent-login.
-      // Paramos antes de apagar o Firestore para não deixar a conta sem perfil mas ainda ativa.
-      if (diffMs > 5 * 60 * 1000) {
-        const err = new Error('Reautenticação necessária');
-        (err as any).code = 'auth/requires-recent-login';
-        throw err;
-      }
-
-      // 0. Best-effort: pedir à API para apagar as fotos do Storage (avatar +
-      //    galeria do Explorar). Precisa acontecer ANTES do deleteDoc/delete()
-      //    porque depois não há mais idToken. Falha aqui NUNCA bloqueia a
-      //    exclusão — a conta some; um arquivo órfão é problema menor.
-      await deleteRemotePhotosBestEffort();
-
-      // 1. Excluir o documento principal do usuário no Firestore (apaga perfil, disponibilidade, status)
-      const userRef = doc(db, 'users', user.uid);
-      await deleteDoc(userRef);
-
-      // 2. Excluir a credencial do usuário no Firebase Auth
-      if (auth.currentUser) {
-        await auth.currentUser.delete();
-      }
-
-      // 3. Limpar a sessão local do Zustand
-      useAuthStore.getState().clear();
+      await runDeleteAccountFlow({
+        getIdToken: () => auth.currentUser?.getIdToken() ?? Promise.resolve(null),
+        deleteMyAccount: (token) => api.deleteMyAccount(token),
+        cleanupLocal: async () => {
+          clearPendingNotificationRoute();
+          useAuthStore.getState().clear();
+          useUserSessionsStore.getState().clear();
+          await AsyncStorage.multiRemove([...ACCOUNT_SCOPED_STORAGE_KEYS]);
+        },
+        hasSession: () => Boolean(auth.currentUser),
+        signOut: () => signOut(auth),
+      });
     } catch (error) {
       console.error('[useAuth] deleteAccount error:', error);
       throw error;

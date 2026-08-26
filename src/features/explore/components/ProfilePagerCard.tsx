@@ -23,18 +23,21 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  Pressable,
   TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, MessageCircle, Calendar } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, typography, borderRadius, shadows } from '@constants/theme';
+import { ExpandableText } from '@shared/components/ExpandableText';
 import type { PublicExploreProfile } from '../types';
 import {
   formatAgeRange,
   formatLocation,
-  getThemeChips,
+  themeChipsState,
+  getPresenceBadges,
+  BIO_COLLAPSED_LINES,
 } from '../utils/exploreView';
 import { ExplorePhotoGallery } from './ExplorePhotoGallery';
 
@@ -57,8 +60,7 @@ interface ProfilePagerCardProps {
   onPhotoIndexChange?: (index: number) => void;
 }
 
-/** Linhas da bio quando recolhida / teto quando expandida. */
-const BIO_COLLAPSED_LINES = 3;
+/** Teto da bio expandida (o excedente rola dentro do card). */
 const BIO_EXPANDED_MAX_HEIGHT = 8 * 20; // ~8 linhas de lineHeight 20
 
 /**
@@ -79,12 +81,13 @@ export function ProfilePagerCard({
   onPhotoIndexChange,
 }: ProfilePagerCardProps) {
   const [galleryFailed, setGalleryFailed] = useState(false);
-  const [bioExpanded, setBioExpanded] = useState(false);
+  const [themesExpanded, setThemesExpanded] = useState(false);
 
   // Perfil trocou (FlatList recicla o componente) → reseta o estado local.
+  // (A bio se reseta sozinha via `resetKey={profile.uid}` no ExpandableText.)
   useEffect(() => {
     setGalleryFailed(false);
-    setBioExpanded(false);
+    setThemesExpanded(false);
   }, [profile.uid]);
 
   const name = profile.publicName || 'Acolhedor(a)';
@@ -95,7 +98,8 @@ export function ProfilePagerCard({
   const age = formatAgeRange(profile.ageRange);
   const place = formatLocation(profile.city, profile.state);
   const bio = typeof profile.bio === 'string' ? profile.bio.trim() : '';
-  const { chips, extra } = getThemeChips(profile.interests);
+  const themes = themeChipsState(profile.interests, themesExpanded);
+  const badges = getPresenceBadges({ canTalkNow, liveNow }, previewMode);
 
   const actionsEnabled = !previewMode;
   const talkEnabled = actionsEnabled && canTalkNow && Boolean(onTalkNow);
@@ -150,18 +154,13 @@ export function ProfilePagerCard({
 
         {/* ── Conteúdo sobre o gradiente (acima das tap zones) ──────────── */}
         <View style={styles.content}>
-          {canTalkNow && (
+          {/* Pill "DISPONÍVEL AGORA" — só por `reachable`. */}
+          {badges.showAvailablePill && (
             <View style={styles.badgeRow}>
               <View style={styles.availableBadge}>
                 <View style={styles.availableDot} />
                 <Text style={styles.availableText}>DISPONÍVEL AGORA</Text>
               </View>
-              {liveNow && (
-                <View style={styles.liveBadge}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>Ativo agora</Text>
-                </View>
-              )}
             </View>
           )}
 
@@ -170,64 +169,83 @@ export function ProfilePagerCard({
             {age ? <Text style={styles.age}>{`  ·  ${age}`}</Text> : null}
           </Text>
 
-          {place && (
+          {/* Localização + "Ativo agora" (ponto verde discreto) — o ponto vem
+              SÓ de `liveNow`, independente do pill: pode aparecer com
+              reachable=false e vice-versa. */}
+          {(place || badges.showActiveNow) && (
             <View style={styles.placeRow}>
-              <MapPin size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.2} />
-              <Text style={styles.placeText} numberOfLines={1}>
-                {place}
-              </Text>
+              {place ? (
+                <>
+                  <MapPin size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.2} />
+                  <Text style={styles.placeText} numberOfLines={1}>
+                    {place}
+                  </Text>
+                </>
+              ) : null}
+              {badges.showActiveNow && (
+                <View
+                  style={[styles.liveBadge, place ? styles.liveBadgeAfterPlace : null]}
+                  accessibilityLabel="Ativo agora"
+                >
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>Ativo agora</Text>
+                </View>
+              )}
             </View>
           )}
 
           {bio ? (
             <View style={styles.bioBlock}>
               <Text style={styles.bioLabel}>SOBRE MIM</Text>
-              {bioExpanded ? (
-                <ScrollView
-                  style={styles.bioScroll}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator={false}
-                >
-                  <Text style={styles.bioText}>{bio}</Text>
-                </ScrollView>
-              ) : (
-                <Text style={styles.bioText} numberOfLines={BIO_COLLAPSED_LINES}>
-                  {bio}
-                </Text>
-              )}
-              <TouchableOpacity
-                onPress={() => setBioExpanded((v) => !v)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  bioExpanded ? 'Recolher a apresentação' : 'Ver a apresentação completa'
-                }
-              >
-                <Text style={styles.bioToggle}>
-                  {bioExpanded ? 'VER MENOS' : 'VER MAIS'}
-                </Text>
-              </TouchableOpacity>
+              <ExpandableText
+                text={bio}
+                collapsedLines={BIO_COLLAPSED_LINES}
+                expandedMaxHeight={BIO_EXPANDED_MAX_HEIGHT}
+                textStyle={styles.bioText}
+                toggleStyle={styles.bioToggle}
+                resetKey={profile.uid}
+                moreA11yLabel="Ver a apresentação completa"
+                lessA11yLabel="Recolher a apresentação"
+              />
             </View>
           ) : null}
 
-          {chips.length > 0 && (
+          {themes.chips.length > 0 && (
             <View style={styles.themes}>
-              {chips.map((t) => (
+              {themes.chips.map((t) => (
                 <View key={t.id} style={styles.themeChip}>
                   <Text style={styles.themeText}>
                     {t.emoji} {t.label}
                   </Text>
                 </View>
               ))}
-              {extra > 0 && (
-                <View style={styles.themeChip}>
-                  <Text style={styles.themeText}>+{extra}</Text>
-                </View>
+              {/* "+N" / "MOSTRAR MENOS": expande TODOS os interesses do DTO,
+                  sem request. Estado por uid (reset ao trocar de card). */}
+              {themes.canToggle && (
+                <Pressable
+                  onPress={() => setThemesExpanded((v) => !v)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    themes.expanded
+                      ? 'Mostrar menos interesses'
+                      : `Mostrar mais ${themes.extra} interesses`
+                  }
+                  style={({ pressed }) => [
+                    styles.themeChip,
+                    styles.themeChipToggle,
+                    pressed && styles.themeChipPressed,
+                  ]}
+                >
+                  <Text style={styles.themeText}>
+                    {themes.expanded ? 'MOSTRAR MENOS' : `+${themes.extra}`}
+                  </Text>
+                </Pressable>
               )}
             </View>
           )}
 
-          {!canTalkNow && !previewMode && (
+          {badges.showUnavailableHint && (
             <Text style={styles.unavailableHint}>Indisponível para chamada agora</Text>
           )}
 
@@ -338,12 +356,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
     letterSpacing: 0.6,
   },
-  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#4ADE80' },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  liveBadgeAfterPlace: { marginLeft: spacing.xs },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80' },
   liveText: {
     fontSize: 10,
-    fontWeight: typography.weight.bold,
-    color: 'rgba(255,255,255,0.9)',
+    fontWeight: typography.weight.semibold,
+    color: 'rgba(255,255,255,0.8)',
   },
   name: {
     fontSize: typography.size.xxl,
@@ -370,7 +389,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     letterSpacing: 1,
   },
-  bioScroll: { maxHeight: BIO_EXPANDED_MAX_HEIGHT },
   bioText: {
     fontSize: typography.size.sm,
     fontWeight: typography.weight.medium,
@@ -390,6 +408,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 4,
   },
+  themeChipToggle: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+  },
+  themeChipPressed: { opacity: 0.7 },
   themeText: { fontSize: 11, fontWeight: typography.weight.bold, color: '#FFF' },
   unavailableHint: {
     fontSize: 11,

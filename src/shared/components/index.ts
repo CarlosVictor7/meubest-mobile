@@ -13,5 +13,6 @@ export { BottomNav, BOTTOM_NAV_SCROLL_PAD, BOTTOM_NAV_BAR_HEIGHT } from './Botto
 export { PlaceholderScreen } from './PlaceholderScreen';
 export { TabHeader } from './TabHeader';
 export { StartModal } from './StartModal';
+export { ExpandableText } from './ExpandableText';
 export type { BottomNavTab } from './BottomNav';
 

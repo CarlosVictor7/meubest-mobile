@@ -86,6 +86,8 @@ async function upsertAppleProfile(params: {
       authProvider: 'apple',
       providerIds,
       isOnline: effectiveRole === 'listener',
+      // lastSeenAt acompanha isOnline desde o nascimento (ver @shared/utils/presence).
+      ...(effectiveRole === 'listener' ? { lastSeenAt: new Date().toISOString() } : {}),
       createdAt: serverTimestamp() as any,
       updatedAt: serverTimestamp() as any,
       isProfileComplete: false,
