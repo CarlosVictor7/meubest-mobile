@@ -47,8 +47,17 @@ const getNotificationEmoji = (type?: string): string => {
     case 'call':
       return '📞';
     case 'session_scheduled':
-    case 'session_accepted':
+    case 'scheduled_session_created':
       return '🗓️';
+    case 'session_accepted':
+      return '✅';
+    case 'scheduled_session_reminder':
+      return '⏰';
+    case 'session_started':
+      return '🎥';
+    case 'session_rejected':
+    case 'session_expired':
+      return '⌛';
     case 'session_cancelled':
       return '❌';
     case 'tip':

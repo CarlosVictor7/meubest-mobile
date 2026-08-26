@@ -14,7 +14,7 @@ interface RequestOptions {
   token?: string;
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public statusCode: number,
     message: string,
@@ -22,6 +22,20 @@ class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+export function isApiError(err: unknown): err is ApiError {
+  return err instanceof ApiError;
+}
+
+/** Resposta das transições de sessão agendada (`/sessions/:id/accept|reject|cancel|join`). */
+export interface SessionTransitionResponse {
+  ok: true;
+  sessionId: string;
+  status: string;
+  /** false quando a transição já tinha acontecido (repetir = no-op 200). */
+  changed: boolean;
+  event?: string;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
@@ -97,4 +111,32 @@ export const api = {
     ),
   /** O próprio perfil como terceiros o veem + estado de visibilidade. */
   getExploreMe: (token: string) => request<ExploreMeResponse>('/explore/me', { token }),
+
+  // ─── Sessão agendada: transições SÓ via API (server-authoritative) ───────
+  // Erros: 401 sem token · 403 ator errado · 404 · 409 transição inválida ou
+  // fora da janela. Repetir a mesma ação = 200 com `changed: false`.
+  /** Acolhedor aceita a solicitação (`pending → accepted`). */
+  acceptScheduledSession: (token: string, sessionId: string) =>
+    request<SessionTransitionResponse>(`/sessions/${encodeURIComponent(sessionId)}/accept`, {
+      method: 'POST',
+      token,
+    }),
+  /** Acolhedor recusa a solicitação (`pending → rejected`). */
+  rejectScheduledSession: (token: string, sessionId: string) =>
+    request<SessionTransitionResponse>(`/sessions/${encodeURIComponent(sessionId)}/reject`, {
+      method: 'POST',
+      token,
+    }),
+  /** Qualquer participante cancela (`pending|accepted → cancelled`). */
+  cancelScheduledSession: (token: string, sessionId: string) =>
+    request<SessionTransitionResponse>(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+      method: 'POST',
+      token,
+    }),
+  /** Entrar na sala dentro da janela (−15/+30 min); grava `joinedAt.{uid}`/`startedAt`. */
+  joinScheduledSession: (token: string, sessionId: string) =>
+    request<SessionTransitionResponse>(`/sessions/${encodeURIComponent(sessionId)}/join`, {
+      method: 'POST',
+      token,
+    }),
 };

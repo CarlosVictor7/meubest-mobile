@@ -33,6 +33,26 @@ describe('buildNotificationRoute', () => {
     ).toEqual({ kind: 'sessionDetail', sessionId: 's2' });
   });
 
+  it('transições de agendamento → SessionDetail, NUNCA VideoRoom', () => {
+    for (const type of [
+      'session_accepted',
+      'session_rejected',
+      'session_cancelled',
+      'session_expired',
+      'session_started',
+    ]) {
+      expect(buildNotificationRoute({ type, sessionId: 's9' })).toEqual({
+        kind: 'sessionDetail',
+        sessionId: 's9',
+      });
+    }
+  });
+
+  it('session_started sem sessionId → null (o ENTRAR do detalhe valida a janela via /join)', () => {
+    expect(buildNotificationRoute({ type: 'session_started' })).toBeNull();
+    expect(buildNotificationRoute({ type: 'session_accepted', sessionId: '' })).toBeNull();
+  });
+
   it('agendada/lembrete SEM sessionId → null (não navega às cegas)', () => {
     expect(buildNotificationRoute({ type: 'scheduled_session_created' })).toBeNull();
     expect(
