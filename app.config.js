@@ -35,6 +35,8 @@ module.exports = {
     package: IS_DEV ? 'br.com.meubest.app.dev' : 'meu.best',
     versionCode: 5,
     googleServicesFile: './google-services.json',
+    // Overlay "desenhar sobre outros apps" vem do template/debug do RN; o app não usa.
+    blockedPermissions: ['android.permission.SYSTEM_ALERT_WINDOW'],
     permissions: [
       'android.permission.CAMERA',
       'android.permission.RECORD_AUDIO',
