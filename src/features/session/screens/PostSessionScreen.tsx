@@ -50,7 +50,9 @@ export function PostSessionScreen() {
   // isSpeaker e canShowTip no escopo do componente —
   // necessário para que handleSkipReview também tenha acesso,
   // não apenas handleSubmit.
-  const isSpeaker = profile?.role === 'speaker' || (!!session && session.speakerId === user?.uid);
+  // Papel NA SESSÃO, não o modo atual do perfil: um acolhedor que trocou para
+  // "desabafar" avaliava a si mesmo (toId == uid) e as Rules negavam.
+  const isSpeaker = session ? session.speakerId === user?.uid : profile?.role === 'speaker';
   const canShowTip = isSpeaker && !!session?.listenerId && session?.listenerId !== user?.uid;
 
   // Função centralizada: avança para gorjeta (speaker/Android) ou Home (listener/iOS)
@@ -97,16 +99,9 @@ export function PostSessionScreen() {
         createdAt: serverTimestamp(),
       });
 
-      // 2. Criar Notificação para o destinatário no Firestore
-      await addDoc(collection(db, 'notifications'), {
-        userId: targetUserId,
-        title: 'Nova Avaliação! ✨',
-        message: 'Você recebeu uma nova avaliação pela sua participação em uma conversa.',
-        type: 'session',
-        read: false,
-        link: '/dashboard?tab=sessions',
-        createdAt: new Date().toISOString(),
-      });
+      // Sem notifications.create: as Rules só deixam o servidor criar
+      // notificações. O erro fazia a avaliação (já salva) parecer falha, pulava
+      // a gorjeta e o reenvio duplicava a avaliação.
 
       Toast.show({
         type: 'success',
