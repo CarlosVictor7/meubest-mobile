@@ -95,9 +95,18 @@ export function WalletScreen() {
   };
 
   const availableBalance = summary?.balanceRewards || 0;
-  const withdrawAmount = parseFloat(withdrawAmountStr.replace(',', '.')) || 0;
+  // "1.000,50" → 1000.50 (antes virava 1 e a API respondia "mínimo R$10").
+  const normalizedAmount = withdrawAmountStr.includes(',')
+    ? withdrawAmountStr.replace(/\./g, '').replace(',', '.')
+    : withdrawAmountStr;
+  const withdrawAmount = parseFloat(normalizedAmount) || 0;
   const pixValidationError = pixKey.trim().length > 0 ? getPixValidationError(pixKeyType, pixKey) : '';
-  const canWithdraw = withdrawAmount > 0 && withdrawAmount <= availableBalance && pixKey.trim().length > 0 && !pixValidationError;
+  // Mesmas regras da API (withdrawalRules): R$ 10 a R$ 5.000, até 2 casas.
+  const WITHDRAW_MIN = 10;
+  const WITHDRAW_MAX = 5000;
+  const amountRuleOk = withdrawAmount >= WITHDRAW_MIN && withdrawAmount <= WITHDRAW_MAX &&
+    Math.abs(Math.round(withdrawAmount * 100) - withdrawAmount * 100) < 1e-6;
+  const canWithdraw = amountRuleOk && withdrawAmount <= availableBalance && pixKey.trim().length > 0 && !pixValidationError;
 
   const validTransactions = (transactions || []).filter(tx => {
     if (!tx) return false;
@@ -190,7 +199,8 @@ export function WalletScreen() {
       tip_sent: 'Retribuição enviada',
       total_fee: 'Taxa total',
       withdrawal: 'Saque',
-      refund: 'Reembolso'
+      refund: 'Reembolso',
+      tip_reversal: 'Estorno de retribuição'
     };
     return map[type] || type;
   };

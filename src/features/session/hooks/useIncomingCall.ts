@@ -268,14 +268,16 @@ export function useIncomingCall(
         return;
       }
       const data = snap.data();
-      // Se outro apoiador aceitou ou a sessão foi cancelada/encerrada, fechar modal
-      if (data.status !== 'pending' || data.listenerId !== null) {
+      // Se outro apoiador aceitou ou a sessão foi cancelada/encerrada, fechar modal.
+      // Chamada direcionada (Explorar) já nasce com listenerId = meu uid — isso
+      // NÃO é "aceita por outro"; antes o modal fechava no primeiro snapshot.
+      if (data.status !== 'pending' || (data.listenerId !== null && data.listenerId !== user?.uid)) {
         setIncomingSession(null);
       }
     });
 
     return () => unsub();
-  }, [incomingSession?.id]);
+  }, [incomingSession?.id, user?.uid]);
 
   // ─── Recusa local ──────────────────────────────────────────────────────────
   const dismissSession = useCallback((sessionId: string) => {
@@ -305,7 +307,8 @@ export function useIncomingCall(
           if (data.status !== 'pending') {
             throw new Error('Sessão não está mais disponível');
           }
-          if (data.listenerId !== null) {
+          // Broadcast: listenerId null. Direcionada: já é o meu uid desde a criação.
+          if (data.listenerId !== null && data.listenerId !== user.uid) {
             throw new Error('Sessão já foi aceita por outro apoiador');
           }
 

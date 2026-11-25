@@ -85,7 +85,9 @@ export async function signInWithGoogle(
         uid,
         name: displayName ?? 'Usuário',
         email: email ?? '',
-        photoURL: photoURL ?? undefined,
+        // Conta Google sem foto: `undefined` faz o setDoc lançar (o SDK não
+        // aceita undefined sem ignoreUndefinedProperties) e o cadastro falhava.
+        ...(photoURL ? { photoURL } : {}),
         role: effectiveRole,
         isOnline: effectiveRole === 'listener',
         // lastSeenAt acompanha isOnline desde o nascimento (ver @shared/utils/presence).
