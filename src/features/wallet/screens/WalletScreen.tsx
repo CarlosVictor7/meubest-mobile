@@ -199,7 +199,8 @@ export function WalletScreen() {
       tip_sent: 'Retribuição enviada',
       total_fee: 'Taxa total',
       withdrawal: 'Saque',
-      refund: 'Reembolso'
+      refund: 'Reembolso',
+      tip_reversal: 'Estorno de retribuição'
     };
     return map[type] || type;
   };
